@@ -4,8 +4,14 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+torchaudio = "==2.2.0"
+numpy = "==1.26.3"
+flake8 = "==7.0.0"
+black = {extras = ["jupyter"], version = "*"}
+matplotlib = "==3.8.2"
 
 [dev-packages]
+ipykernel = "*"
 
 [requires]
 python_version = "3.11"
