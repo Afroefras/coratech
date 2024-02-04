@@ -4,6 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+torchaudio = "==2.2.0"
+numpy = "==1.26.3"
 
 [dev-packages]
 
