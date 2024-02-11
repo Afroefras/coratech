@@ -1,12 +1,11 @@
 from torch import Tensor
 
+def standard_scale(x: Tensor) -> Tensor:
+    x_mean = x.mean()
+    x_std = x.std() + 1e-10
 
-class TorchStandardScaler:
-    def fit(self, x: Tensor) -> Tensor:
-        self.mean = x.mean(0, keepdim=True)
-        self.std = x.std(0, unbiased=False, keepdim=True)
-
-    def transform(self, x: Tensor) -> Tensor:
-        x -= self.mean
-        x /= self.std + 1e-7
-        return x
+    scaled = x.clone()
+    scaled -= x_mean
+    scaled /= x_std
+    
+    return scaled
