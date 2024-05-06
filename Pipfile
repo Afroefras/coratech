@@ -7,11 +7,12 @@ name = "pypi"
 torchaudio = "==2.2.0"
 numpy = "==1.26.3"
 flake8 = "==7.0.0"
-black = {extras = ["jupyter"], version = "*"}
+black = {extras = ["jupyter"], version = "24.2.0"}
 matplotlib = "==3.8.2"
+scipy = "==1.12.0"
 
 [dev-packages]
-ipykernel = "*"
+ipykernel = "6.29.2"
 
 [requires]
 python_version = "3.11"
