@@ -9,3 +9,13 @@ def standard_scale(x: Tensor) -> Tensor:
     scaled /= x_std
     
     return scaled
+
+def min_max_scale(x: Tensor) -> Tensor:
+    x_min = x.min()
+    x_max = x.max()
+
+    scaled = x.clone()
+    scaled -= x_min
+    scaled /= x_max - x_min
+
+    return scaled
