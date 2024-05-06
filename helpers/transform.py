@@ -44,14 +44,16 @@ class AlignAudios:
         peaks, _ = find_peaks(audio.numpy()[0], height=threshold)
         return peaks
     
-    def trim_audio(self, audio: Tensor, peaks: array, n_peak: int) -> Tensor:
-        trimmed_audio = audio[:, peaks[n_peak]:]
-        return trimmed_audio
+    def trim_audio(self, audio: Tensor, sample_rate: int, peaks: array, n_peak: int) -> Tensor:
+        begin_at = peaks[n_peak] + sample_rate // 60
+        trimmed = audio[:, begin_at:]
+        return trimmed
     
-    def transform(self, audio_dir: str, scaler: Callable, cutoff: int, threshold: float, n_peak: int) -> Tensor:
+    def transform(self, audio_dir: str, cutoff: int=600, threshold: float=0.7, n_peak: int=-1) -> Tensor:
         audio, sample_rate = self.load_audio(audio_dir)
-        audio = self.scale_audio(audio, scaler)
+        audio = self.scale_audio(audio, standard_scale)
         audio = self.highpass_filter(audio, sample_rate, cutoff)
         peaks = self.find_peaks(audio, threshold)
-        trimmed_audio = self.trim_audio(audio, peaks, n_peak)
-        return trimmed_audio
+        trimmed = self.trim_audio(audio, sample_rate, peaks, n_peak)
+        final_audio = min_max_scale(trimmed)
+        return final_audio, sample_rate
