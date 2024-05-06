@@ -1,7 +1,7 @@
 import torchaudio
-from numpy import array
-from torch import Tensor
+from torch import Tensor, fft
 from typing import Tuple, Callable
+from numpy import array, percentile
 from scipy.signal import find_peaks
 
 
@@ -77,7 +77,35 @@ class AlignAudios:
 
         scaled = scaler(audio)
         return scaled
+    
+    def get_frequencies(self, audio: Tensor, sample_rate: int) -> Tensor:
+        frequencies = fft.fftfreq(audio.size(1), d=1/sample_rate)
+        return frequencies
 
+    def get_magnitudes(self, audio: Tensor) -> Tensor:
+        magnitudes = fft.fft(audio, dim=1).abs()
+        return magnitudes
+    
+    def half_magnitudes_and_frequencies(self, magnitudes: Tensor, frequencies: Tensor) -> Tensor:
+        half_magnitudes = magnitudes[:, :magnitudes.size(1) // 2]
+        half_frequencies = frequencies[:magnitudes.size(1) // 2]
+        return half_magnitudes, half_frequencies
+    
+    def sort_frequencies(self, half_magnitudes: Tensor, half_frequencies: Tensor) -> Tensor:
+        sorted_magnitudes = half_magnitudes.argsort()[::-1]
+        sorted_frequencies = half_frequencies[sorted_magnitudes]
+        return sorted_frequencies
+    
+    def get_frequency_percentile(self, audio: Tensor, sample_rate: int, percentile: float) -> Tensor:
+        frequencies = self.get_frequencies(audio, sample_rate)
+        magnitudes = self.get_magnitudes(audio)
+
+        half_magnitudes, half_frequencies = self.half_magnitudes_and_frequencies(magnitudes, frequencies)
+        sorted_frequencies = self.sort_frequencies(half_magnitudes, half_frequencies)
+
+        freq_percentile = percentile(sorted_frequencies, percentile)
+        return freq_percentile
+    
     def highpass_filter(self, audio: Tensor, sample_rate: int, cutoff: int) -> Tensor:
         """Applies a highpass filter to the audio tensor.
 
@@ -131,8 +159,8 @@ class AlignAudios:
     def transform(
         self,
         audio_dir: str,
-        cutoff: int = 600,
-        threshold: float = 0.7,
+        highpass_percentile: 90,
+        peak_threshold: float = 0.7,
         n_peak: int = -1,
     ) -> Tensor:
         """Transforms the audio tensor using the following steps:
@@ -156,8 +184,12 @@ class AlignAudios:
 
         audio, sample_rate = self.load_audio(audio_dir)
         audio = self.scale_audio(audio, standard_scale)
+
+        cutoff = self.get_frequency_percentile(audio, sample_rate, highpass_percentile)
         audio = self.highpass_filter(audio, sample_rate, cutoff)
-        peaks = self.find_peaks(audio, threshold)
+
+        peaks = self.find_peaks(audio, peak_threshold)
         trimmed = self.trim_audio(audio, sample_rate, peaks, n_peak)
+
         final_audio = min_max_scale(trimmed)
         return final_audio, sample_rate
