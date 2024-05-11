@@ -248,3 +248,30 @@ class TrimAfterClicker:
         final_audio = min_max_scale(trimmed)
 
         return final_audio, sample_rate
+
+    def trim_to_min_length(
+        self,
+        mobile_audio: Tensor,
+        mobile_sample_rate: int,
+        digital_audio: Tensor,
+        digital_sample_rate: int,
+    ) -> Tuple[Tensor, Tensor]:
+        
+        mobile_seconds = mobile_audio.size(1) / mobile_sample_rate
+        digital_seconds = digital_audio.size(1) / digital_sample_rate
+
+        min_seconds = int(min(mobile_seconds, digital_seconds))
+
+        mobile_audio = mobile_audio[:, :min_seconds * mobile_sample_rate]
+        digital_audio = digital_audio[:, :min_seconds * digital_sample_rate]
+
+        return mobile_audio, digital_audio
+
+    def align_audios(self, mobile_dir: str, digital_dir: str) -> Tuple[Tensor, Tensor]:
+        mobile_audio, mobile_sample_rate = self.transform(mobile_dir)
+        digital_audio, digital_sample_rate = self.transform(digital_dir)
+
+        mobile_audio, digital_audio = self.trim_to_min_length(
+            mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
+        )
+        return (mobile_audio, mobile_sample_rate), (digital_audio, digital_sample_rate)
