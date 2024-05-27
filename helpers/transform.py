@@ -96,7 +96,9 @@ class TrimAfterClicker:
         frequencies = fft.fftfreq(audio.size(1), d=1 / sample_rate)
         return frequencies
 
-    def get_frequency_percentile(self, frequencies: Tensor, percentile_num: float) -> float:
+    def get_frequency_percentile(
+        self, frequencies: Tensor, percentile_num: float
+    ) -> float:
         """
         Calculates the frequency percentile of the audio tensor.
 
