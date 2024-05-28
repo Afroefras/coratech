@@ -2,10 +2,14 @@ import numpy as np
 from pywt import cwt
 from torch import Tensor
 import matplotlib.pyplot as plt
+from scipy.signal import decimate
 
 
 def plot_wavelet_spectrogram(
-    audio_tensor: Tensor, sample_rate: int, wavelet: str = "cmor1.5-1.0"
+    audio_tensor: Tensor,
+    sample_rate: int,
+    downsample_factor: int = 50,
+    wavelet: str = "cmor1.5-1.0",
 ):
     """
     Plots the waveform and wavelet spectrogram of an audio signal.
@@ -13,8 +17,8 @@ def plot_wavelet_spectrogram(
     Args:
     audio_tensor (Tensor): The audio signal as a PyTorch tensor of shape (1, n) or (n,).
     sample_rate (int): The sample rate of the audio signal.
+    downsample_factor (int): The factor by which to downsample the audio signal. Default is 50.
     wavelet (str): The wavelet type to use for the continuous wavelet transform (CWT).
-    Default is 'cmor1.5-1.0'.
 
     Returns:
     None
@@ -23,9 +27,15 @@ def plot_wavelet_spectrogram(
     # Ensure the audio tensor is a numpy array
     audio = audio_tensor.squeeze().numpy()
 
-    # Compute the continuous wavelet transform (CWT)
+    # Downsample the audio signal
+    audio_downsampled = decimate(audio, downsample_factor)
+    sample_rate_downsampled = sample_rate // downsample_factor
+
+    # Compute the continuous wavelet transform (CWT) on the downsampled audio
     widths = np.arange(1, 128)
-    cwt_matrix, freqs = cwt(audio, widths, wavelet, sampling_period=1 / sample_rate)
+    cwt_matrix, freqs = cwt(
+        audio_downsampled, widths, wavelet, sampling_period=1 / sample_rate_downsampled
+    )
 
     # Create the figure and subplots
     fig, ax = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
