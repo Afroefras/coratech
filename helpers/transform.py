@@ -77,21 +77,21 @@ class TrimAfterClicker:
             audio, sample_rate, cutoff
         )
         return filtered_audio
-    
+
     def audio_to_abs(self, audio: Tensor) -> Tensor:
         """
         Converts the audio tensor to its absolute value.
         """
         abs_audio = audio.abs()
         return abs_audio
-    
+
     def downsample_audio(self, audio: Tensor, downsample_factor: int) -> Tensor:
         """
         Downsamples the audio tensor.
         """
         downsampled = decimate(audio, downsample_factor)
         return downsampled
-    
+
     def smooth_signal(self, audio: Tensor, sigma: float) -> Tensor:
         """
         Smoothes the audio tensor.
@@ -105,15 +105,21 @@ class TrimAfterClicker:
         """
         peaks, _ = find_peaks(audio.numpy()[0], prominence=prominence)
         return peaks
-    
+
     def get_peaks_distances(self, peaks: array) -> array:
         """
         Calculates the distances between the peaks.
         """
         peaks_distances = diff(peaks)
         return peaks_distances
-    
-    def get_nth_peak(self, peaks: array, peaks_distances: array, distance_threshold: int, nth_peak: int) -> int:
+
+    def get_nth_peak(
+        self,
+        peaks: array,
+        peaks_distances: array,
+        distance_threshold: int,
+        nth_peak: int,
+    ) -> int:
         """
         Returns the index of the nth peak.
         """
@@ -122,7 +128,7 @@ class TrimAfterClicker:
         peaks_under_threshold = peaks_copy[peaks_mask]
         peak = peaks_under_threshold[nth_peak]
         return peak
-    
+
     def get_upsampled_peak(self, peak: int, upsample_factor: int) -> int:
         """
         Returns the upsampled peak.
@@ -130,9 +136,7 @@ class TrimAfterClicker:
         upsampled_peak = peak * upsample_factor
         return upsampled_peak
 
-    def trim_audio(
-        self, audio: Tensor, sample_rate: int, peak: int
-    ) -> Tensor:
+    def trim_audio(self, audio: Tensor, sample_rate: int, peak: int) -> Tensor:
         """
         Trims the audio tensor to the given peak.
         """
@@ -140,38 +144,73 @@ class TrimAfterClicker:
         trimmed = audio[:, begin_at:]
         return trimmed
 
+    def filter_high_freq(
+        self, audio: Tensor, sample_rate: int, freq_percentile: float
+    ) -> Tensor:
+        """
+        Transforms the audio tensor using the highpass filter.
+        """
+        frequencies = self.get_frequencies(audio, sample_rate)
+        cutoff = self.get_frequency_percentile(frequencies, freq_percentile)
+        filtered_audio = self.highpass_filter(audio, sample_rate, cutoff)
+
+        return filtered_audio
+
+    def abs_downsample_smooth(
+        self, audio: Tensor, downsample_factor: int, sigma: float
+    ) -> int:
+        """
+        Returns the last peak.
+        """
+        abs_audio = self.audio_to_abs(audio)
+        downsampled = self.downsample_audio(abs_audio, downsample_factor)
+        smoothed = self.smooth_signal(downsampled, sigma)
+
+        return smoothed
+
+    def find_last_peak(
+        self, audio: Tensor, prominence: float, distance_threshold: int
+    ) -> int:
+        """
+        Returns the upsampled peak.
+        """
+        peaks = self.find_peaks(audio, prominence)
+        peaks_distances = self.get_peaks_distances(peaks)
+        last_peak = self.get_nth_peak(
+            peaks, peaks_distances, distance_threshold, nth_peak=-1
+        )
+
+        return last_peak
+
     def transform(
         self,
         audio_dir: str,
+        freq_percentile: float = 99.99,
+        downsample_factor: int = 200,
+        sigma: float = 2,
+        prominence: float = 0.1,
+        distance_threshold: int = 50,
     ) -> Tensor:
         """
-        Transforms the audio tensor using the following steps:
-
-        1. Load the audio file.
-        2. Scale the audio tensor.
-        3. Calculate the frequency percentile
-        3. Apply a highpass filter given the previous percentile.
-        4. Find the peaks in the audio tensor.
-        5. Trim the audio tensor to the given peak.
-        6. Scale the trimmed audio tensor to the range [0, 1].
-
-        Args:
-            audio_dir: The directory of the audio file.
-
-        Returns:
-            The transformed audio tensor.
+        Transforms the audio tensor.
         """
         audio, sample_rate = self.load_audio(audio_dir)
         scaled_audio = self.scale_audio(audio, standard_scale)
 
-        frequencies = self.get_frequencies(scaled_audio, sample_rate)
-        cutoff = self.get_frequency_percentile(frequencies, 99)
-        filtered_audio = self.highpass_filter(scaled_audio, sample_rate, cutoff)
+        filtered_audio = self.filter_high_freq(
+            scaled_audio, sample_rate, freq_percentile
+        )
+        smoothed_audio = self.abs_downsample_smooth(
+            filtered_audio, downsample_factor, sigma
+        )
+        downsampled_last_peak = self.find_last_peak(
+            smoothed_audio, prominence, distance_threshold
+        )
+        last_peak = self.get_upsampled_peak(
+            downsampled_last_peak, upsample_factor=downsample_factor
+        )
 
-        peak_threshold = percentile(filtered_audio, 99.99)
-        peaks = self.find_peaks(filtered_audio, peak_threshold)
-
-        trimmed = self.trim_audio(audio, sample_rate, peaks, n_peak=-1)
+        trimmed = self.trim_audio(scaled_audio, sample_rate, last_peak)
         final_audio = min_max_scale(trimmed)
 
         return final_audio, sample_rate
