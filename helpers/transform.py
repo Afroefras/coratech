@@ -188,32 +188,30 @@ class TrimAfterClicker:
         freq_percentile: float = 99.99,
         downsample_factor: int = 200,
         sigma: float = 2,
-        prominence: float = 0.1,
+        prominence: float = 0.5,
         distance_threshold: int = 50,
     ) -> Tensor:
         """
         Transforms the audio tensor.
         """
         audio, sample_rate = self.load_audio(audio_dir)
-        scaled_audio = self.scale_audio(audio, standard_scale)
+        scaled = self.scale_audio(audio, standard_scale)
 
-        filtered_audio = self.filter_high_freq(
-            scaled_audio, sample_rate, freq_percentile
-        )
-        smoothed_audio = self.abs_downsample_smooth(
-            filtered_audio, downsample_factor, sigma
-        )
+        filtered = self.filter_high_freq(scaled, sample_rate, freq_percentile)
+        smoothed = self.abs_downsample_smooth(filtered, downsample_factor, sigma)
+        smoothed_scaled = min_max_scale(Tensor(smoothed))
+
         downsampled_last_peak = self.find_last_peak(
-            smoothed_audio, prominence, distance_threshold
+            smoothed_scaled, prominence, distance_threshold
         )
         last_peak = self.get_upsampled_peak(
             downsampled_last_peak, upsample_factor=downsample_factor
         )
 
-        trimmed = self.trim_audio(scaled_audio, sample_rate, last_peak)
-        final_audio = min_max_scale(trimmed)
+        trimmed = self.trim_audio(scaled, sample_rate, last_peak)
+        final = min_max_scale(trimmed)
 
-        return final_audio, sample_rate
+        return final, sample_rate
 
     def trim_to_min_length(
         self,
