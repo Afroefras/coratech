@@ -99,11 +99,11 @@ class TrimAfterClicker:
         smoothed = gaussian_filter1d(audio, sigma=sigma)
         return smoothed
 
-    def find_peaks(self, audio: Tensor, prominence: float) -> array:
+    def find_all_peaks(self, audio: Tensor, prominence: float) -> array:
         """
         Finds the peaks in the audio tensor.
         """
-        peaks, _ = find_peaks(audio.numpy()[0], prominence=prominence)
+        peaks, _ = find_peaks(audio[0], prominence=prominence)
         return peaks
 
     def get_peaks_distances(self, peaks: array) -> array:
@@ -174,7 +174,7 @@ class TrimAfterClicker:
         """
         Returns the upsampled peak.
         """
-        peaks = self.find_peaks(audio, prominence)
+        peaks = self.find_all_peaks(audio, prominence)
         peaks_distances = self.get_peaks_distances(peaks)
         last_peak = self.get_nth_peak(
             peaks, peaks_distances, distance_threshold, nth_peak=-1
