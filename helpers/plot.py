@@ -1,47 +1,65 @@
 import numpy as np
+from pywt import cwt
+from torch import Tensor
 import matplotlib.pyplot as plt
+from scipy.signal import decimate
 
 
-def plot_waveform_and_specgram(waveform, sample_rate):
-    """Plots the waveform and spectrogram of the given audio signal.
+def plot_wavelet_spectrogram(
+    audio_tensor: Tensor,
+    sample_rate: int,
+    downsample_factor: int = 50,
+    wavelet: str = "cmor1.5-1.0",
+):
+    """
+    Plots the waveform and wavelet spectrogram of an audio signal.
 
     Args:
-        waveform: The audio signal waveform.
-        sample_rate: The sample rate of the audio signal.
+    audio_tensor (Tensor): The audio signal as a PyTorch tensor of shape (1, n) or (n,).
+    sample_rate (int): The sample rate of the audio signal.
+    downsample_factor (int): The factor by which to downsample the audio signal. Default is 50.
+    wavelet (str): The wavelet type to use for the continuous wavelet transform (CWT).
+
+    Returns:
+    None
     """
 
-    waveform = waveform.numpy()
-    num_channels, num_frames = waveform.shape
-    time_axis = np.arange(0, num_frames) / sample_rate
+    # Ensure the audio tensor is a numpy array
+    audio = audio_tensor.squeeze().numpy()
 
-    # Create two rows of subplots, one for waveform and one for specgram
-    figure, axes = plt.subplots(2 * num_channels, 1, figsize=(10, 7 * num_channels))
+    # Downsample the audio signal
+    audio_downsampled = decimate(audio, downsample_factor)
+    sample_rate_downsampled = sample_rate // downsample_factor
 
-    # If we have only one channel, axes will be a 1D array,
-    # convert it to an array of axes objects for consistency
-    if num_channels == 1:
-        axes = np.array([axes[0], axes[1]])
+    # Compute the continuous wavelet transform (CWT) on the downsampled audio
+    widths = np.arange(1, 128)
+    cwt_matrix, freqs = cwt(
+        audio_downsampled, widths, wavelet, sampling_period=1 / sample_rate_downsampled
+    )
 
-    for c in range(num_channels):
-        # Waveform for channel c
-        ax_waveform = axes[2 * c] if num_channels > 1 else axes[0]
-        ax_waveform.plot(time_axis, waveform[c], linewidth=1)
-        ax_waveform.grid(True)
-        ax_waveform.set_title(
-            f"Channel {c+1} Waveform" if num_channels > 1 else "Waveform"
-        )
-        if c < num_channels - 1:  # Only add label to last subplot
-            ax_waveform.set_xlabel("")
+    # Create the figure and subplots
+    fig, ax = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 
-        # Spectrogram for channel c
-        ax_specgram = axes[2 * c + 1] if num_channels > 1 else axes[1]
-        # Add noise floor before computing spectrogram
-        noise_floor = 1e-10
-        Z = np.abs(np.fft.fft(waveform[c])) + noise_floor
-        Pxx, freqs, bins, im = ax_specgram.specgram(Z, Fs=sample_rate, scale="dB")
-        ax_specgram.set_title(
-            f"Channel {c+1} Spectrogram" if num_channels > 1 else "Spectrogram"
-        )
+    # Plot the waveform
+    time = np.arange(audio.size) / sample_rate
+    ax[0].plot(time, audio)
+    ax[0].set_title("Waveform")
+    ax[0].set_ylabel("Amplitude")
 
+    # Plot the wavelet spectrogram
+    im = ax[1].imshow(
+        np.abs(cwt_matrix),
+        extent=[0, len(audio) / sample_rate, 1, 128],
+        cmap="Blues",
+        aspect="auto",
+    )
+    ax[1].set_title("Wavelet Spectrogram")
+    ax[1].set_ylabel("Scale")
+    ax[1].set_xlabel("Time [sec]")
+
+    # Add a colorbar for the spectrogram
+    fig.colorbar(im, ax=ax[1], orientation="horizontal", label="Magnitude")
+
+    # Adjust layout to prevent overlap
     plt.tight_layout()
     plt.show()
