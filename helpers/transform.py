@@ -85,16 +85,16 @@ class TrimAfterClicker:
         abs_audio = audio.abs()
         return abs_audio
 
-    def downsample_audio(self, audio: Tensor, downsample_factor: int) -> Tensor:
+    def downsample_audio(self, audio: Tensor, downsample_factor: int) -> array:
         """
         Downsamples the audio tensor.
         """
         downsampled = decimate(audio, downsample_factor)
         return downsampled
 
-    def smooth_signal(self, audio: Tensor, sigma: float) -> Tensor:
+    def smooth_signal(self, audio: array, sigma: int) -> array:
         """
-        Smoothes the audio tensor.
+        Smoothes the audio array using a Gaussian filter.
         """
         smoothed = gaussian_filter1d(audio, sigma=sigma)
         return smoothed
@@ -103,7 +103,7 @@ class TrimAfterClicker:
         """
         Finds the peaks in the audio tensor.
         """
-        peaks, _ = find_peaks(audio[0], prominence=prominence)
+        peaks, _ = find_peaks(audio.squeeze(), prominence=prominence)
         return peaks
 
     def get_peaks_distances(self, peaks: array) -> array:
@@ -185,7 +185,7 @@ class TrimAfterClicker:
     def transform(
         self,
         audio_dir: str,
-        freq_percentile: float = 99.99,
+        freq_percentile: float = 99,
         downsample_factor: int = 200,
         sigma: float = 2,
         prominence: float = 0.5,
@@ -199,7 +199,7 @@ class TrimAfterClicker:
 
         filtered = self.filter_high_freq(scaled, sample_rate, freq_percentile)
         smoothed = self.abs_downsample_smooth(filtered, downsample_factor, sigma)
-        smoothed_scaled = min_max_scale(Tensor(smoothed))
+        smoothed_scaled = min_max_scale(Tensor(smoothed.copy()))
 
         downsampled_last_peak = self.find_last_peak(
             smoothed_scaled, prominence, distance_threshold
@@ -250,3 +250,8 @@ class TrimAfterClicker:
             mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
         )
         return mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
+
+
+AUDIO_DIR = "data/mobile/test-202405191321.m4a"  # Challenge
+tac = TrimAfterClicker()
+audio_result, sample_rate_result = tac.transform(AUDIO_DIR)
