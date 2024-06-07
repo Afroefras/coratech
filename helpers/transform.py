@@ -129,13 +129,6 @@ class TrimAfterClicker:
         peak = peaks_under_threshold[nth_peak]
         return peak
 
-    def get_upsampled_peak(self, peak: int, upsample_factor: int) -> int:
-        """
-        Returns the upsampled peak.
-        """
-        upsampled_peak = peak * upsample_factor
-        return upsampled_peak
-
     def trim_audio(self, audio: Tensor, sample_rate: int, peak: int) -> Tensor:
         """
         Trims the audio tensor to the given peak.
@@ -185,11 +178,6 @@ class TrimAfterClicker:
     def transform(
         self,
         audio_dir: str,
-        freq_percentile: float = 99,
-        downsample_factor: int = 200,
-        sigma: float = 2,
-        prominence: float = 0.5,
-        distance_threshold: int = 50,
     ) -> Tensor:
         """
         Transforms the audio tensor.
@@ -197,18 +185,24 @@ class TrimAfterClicker:
         audio, sample_rate = self.load_audio(audio_dir)
         scaled = self.scale_audio(audio, standard_scale)
 
+        freq_percentile = 99
         filtered = self.filter_high_freq(scaled, sample_rate, freq_percentile)
-        smoothed = self.abs_downsample_smooth(filtered, downsample_factor, sigma)
+
+        downsample_factor = sample_rate // 220
+        downsample_sigma = 2
+        smoothed = self.abs_downsample_smooth(filtered, downsample_factor, downsample_sigma)
+        
         smoothed_scaled = min_max_scale(Tensor(smoothed.copy()))
 
+        prominence = 0.5
+        distance_threshold = 50
         downsampled_last_peak = self.find_last_peak(
             smoothed_scaled, prominence, distance_threshold
         )
-        last_peak = self.get_upsampled_peak(
-            downsampled_last_peak, upsample_factor=downsample_factor
-        )
 
+        last_peak = downsampled_last_peak * downsample_factor
         trimmed = self.trim_audio(scaled, sample_rate, last_peak)
+
         final = min_max_scale(trimmed)
 
         return final, sample_rate
@@ -250,8 +244,3 @@ class TrimAfterClicker:
             mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
         )
         return mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
-
-
-AUDIO_DIR = "data/mobile/test-202405191321.m4a"  # Challenge
-tac = TrimAfterClicker()
-audio_result, sample_rate_result = tac.transform(AUDIO_DIR)
