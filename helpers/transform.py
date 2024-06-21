@@ -1,7 +1,8 @@
 import torchaudio
+import numpy as np
 from torch import Tensor, fft
+import torchaudio.functional as F
 from typing import Tuple, Callable
-from numpy import array, percentile, diff
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, decimate
 
@@ -32,6 +33,34 @@ def min_max_scale(x: Tensor) -> Tensor:
     scaled /= x_max - x_min
 
     return scaled
+
+
+def generate_synthetic_wave(frequency: int, secs_duration: int, sample_rate: int=4000) -> Tuple[Tensor, int]:
+    t = np.linspace(0, secs_duration, int(sample_rate * secs_duration), endpoint=False)
+    wave = 0.5 * np.sin(2 * np.pi * frequency * t)
+    return wave, sample_rate
+
+
+def get_positive_freq_and_magn(audio: np.array, sample_rate: int) -> Tuple[np.array, np.array]:
+    audio = audio.squeeze()
+    
+    fft_result = np.fft.fft(audio)
+    fft_magnitude = np.abs(fft_result)
+    frequencies = np.fft.fftfreq(len(fft_result), 1/sample_rate)
+    
+    positive_frequencies = frequencies[frequencies >= 0]
+    positive_fft_magnitude = fft_magnitude[:len(positive_frequencies)]
+
+    return positive_frequencies, positive_fft_magnitude
+
+
+def apply_bandpass_filter(waveform: Tensor, sample_rate: int, low_freq: int, high_freq: int) -> Tensor:
+    central_freq = (low_freq + high_freq) / 2
+    bandwidth = high_freq - low_freq
+    Q = central_freq / bandwidth
+
+    filtered_waveform = F.bandpass_biquad(waveform, sample_rate, central_freq, Q)
+    return filtered_waveform
 
 
 class TrimAfterClicker:
@@ -66,7 +95,7 @@ class TrimAfterClicker:
         """
         Calculates the frequency percentile of the audio tensor.
         """
-        freq_percentile = percentile(frequencies, percentile_num)
+        freq_percentile = np.percentile(frequencies, percentile_num)
         return freq_percentile
 
     def highpass_filter(self, audio: Tensor, sample_rate: int, cutoff: int) -> Tensor:
@@ -85,38 +114,38 @@ class TrimAfterClicker:
         abs_audio = audio.abs()
         return abs_audio
 
-    def downsample_audio(self, audio: Tensor, downsample_factor: int) -> array:
+    def downsample_audio(self, audio: Tensor, downsample_factor: int) -> np.array:
         """
         Downsamples the audio tensor.
         """
         downsampled = decimate(audio, downsample_factor)
         return downsampled
 
-    def smooth_signal(self, audio: array, sigma: int) -> array:
+    def smooth_signal(self, audio: np.array, sigma: int) -> np.array:
         """
-        Smoothes the audio array using a Gaussian filter.
+        Smoothes the audio np.array using a Gaussian filter.
         """
         smoothed = gaussian_filter1d(audio, sigma=sigma)
         return smoothed
 
-    def find_all_peaks(self, audio: Tensor, prominence: float) -> array:
+    def find_all_peaks(self, audio: Tensor, prominence: float) -> np.array:
         """
         Finds the peaks in the audio tensor.
         """
         peaks, _ = find_peaks(audio.squeeze(), prominence=prominence)
         return peaks
 
-    def get_peaks_distances(self, peaks: array) -> array:
+    def get_peaks_distances(self, peaks: np.array) -> np.array:
         """
         Calculates the distances between the peaks.
         """
-        peaks_distances = diff(peaks)
+        peaks_distances = np.diff(peaks)
         return peaks_distances
 
     def get_nth_peak(
         self,
-        peaks: array,
-        peaks_distances: array,
+        peaks: np.array,
+        peaks_distances: np.array,
         distance_threshold: int,
         nth_peak: int,
     ) -> int:
