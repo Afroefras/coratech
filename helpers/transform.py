@@ -195,7 +195,7 @@ class TrimAfterClicker:
 
     def abs_downsample_smooth(
         self, audio: Tensor, downsample_factor: int, sigma: float
-    ) -> int:
+    ) -> np.array:
         """
         Returns the last peak.
         """
