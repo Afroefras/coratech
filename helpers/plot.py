@@ -1,6 +1,5 @@
 import numpy as np
 from pywt import cwt
-from torch import Tensor
 import matplotlib.pyplot as plt
 from scipy.signal import decimate
 from helpers.transform import get_positive_freq_and_magn
@@ -61,8 +60,8 @@ def plot_audio_fft(audio: np.array, sample_rate: int) -> None:
 
     plt.figure(figsize=(12, 4))
     plt.plot(freq, magn)
-    plt.title('Distribución de Frecuencias')
-    plt.xlabel('Frecuencia (Hz)')
-    plt.ylabel('Magnitud')
+    plt.title("Distribución de Frecuencias")
+    plt.xlabel("Frecuencia (Hz)")
+    plt.ylabel("Magnitud")
     plt.grid()
     plt.show()

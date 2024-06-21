@@ -3,6 +3,7 @@ import numpy as np
 from torch import Tensor, fft
 import torchaudio.functional as F
 from typing import Tuple, Callable
+from scipy.io.wavfile import write
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, decimate
 
@@ -35,26 +36,40 @@ def min_max_scale(x: Tensor) -> Tensor:
     return scaled
 
 
-def generate_synthetic_wave(frequency: int, secs_duration: int, sample_rate: int=4000) -> Tuple[Tensor, int]:
+def generate_synthetic_wave(
+    frequency: int, secs_duration: int, sample_rate: int = 4000
+) -> Tuple[Tensor, int]:
     t = np.linspace(0, secs_duration, int(sample_rate * secs_duration), endpoint=False)
     wave = 0.5 * np.sin(2 * np.pi * frequency * t)
     return wave, sample_rate
 
 
-def get_positive_freq_and_magn(audio: np.array, sample_rate: int) -> Tuple[np.array, np.array]:
+def save_wave_to_wav(
+    wave: np.ndarray, sample_rate: int, filename: str, volume: float = 1.0
+) -> None:
+    wave = wave * volume
+    wave = np.int16(wave * 32767)
+    write(filename, sample_rate, wave)
+
+
+def get_positive_freq_and_magn(
+    audio: np.array, sample_rate: int
+) -> Tuple[np.array, np.array]:
     audio = audio.squeeze()
-    
+
     fft_result = np.fft.fft(audio)
     fft_magnitude = np.abs(fft_result)
-    frequencies = np.fft.fftfreq(len(fft_result), 1/sample_rate)
-    
+    frequencies = np.fft.fftfreq(len(fft_result), 1 / sample_rate)
+
     positive_frequencies = frequencies[frequencies >= 0]
-    positive_fft_magnitude = fft_magnitude[:len(positive_frequencies)]
+    positive_fft_magnitude = fft_magnitude[: len(positive_frequencies)]
 
     return positive_frequencies, positive_fft_magnitude
 
 
-def apply_bandpass_filter(waveform: Tensor, sample_rate: int, low_freq: int, high_freq: int) -> Tensor:
+def apply_bandpass_filter(
+    waveform: Tensor, sample_rate: int, low_freq: int, high_freq: int
+) -> Tensor:
     central_freq = (low_freq + high_freq) / 2
     bandwidth = high_freq - low_freq
     Q = central_freq / bandwidth
@@ -219,8 +234,10 @@ class TrimAfterClicker:
 
         downsample_factor = sample_rate // 220
         downsample_sigma = 2
-        smoothed = self.abs_downsample_smooth(filtered, downsample_factor, downsample_sigma)
-        
+        smoothed = self.abs_downsample_smooth(
+            filtered, downsample_factor, downsample_sigma
+        )
+
         smoothed_scaled = min_max_scale(Tensor(smoothed.copy()))
 
         prominence = 0.5
