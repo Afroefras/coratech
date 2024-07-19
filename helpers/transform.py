@@ -37,11 +37,22 @@ def min_max_scale(x: Tensor) -> Tensor:
 
 
 def generate_synthetic_wave(
-    frequency: int, secs_duration: int, sample_rate: int = 4000
-) -> Tuple[Tensor, int]:
+    frequency: int,
+    secs_duration: int,
+    sample_rate: int = 4000,
+    pre_silence_duration: int = 0,
+    post_silence_duration: int = 0,
+) -> Tuple[np.ndarray, int]:
+
+    pre_silence = np.zeros(int(sample_rate * pre_silence_duration))
+    post_silence = np.zeros(int(sample_rate * post_silence_duration))
+
     t = np.linspace(0, secs_duration, int(sample_rate * secs_duration), endpoint=False)
     wave = 0.5 * np.sin(2 * np.pi * frequency * t)
-    return wave, sample_rate
+
+    combined_wave = np.concatenate([pre_silence, wave, post_silence])
+
+    return combined_wave, sample_rate
 
 
 def save_wave_to_wav(
