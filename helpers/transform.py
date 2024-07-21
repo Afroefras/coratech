@@ -89,9 +89,9 @@ def apply_bandpass_filter(
     return filtered_waveform
 
 
-class TrimAfterClicker:
+class TrimAfterTrigger:
     def __init__(self) -> None:
-        """Initializes the TrimAfterClicker class."""
+        """Initializes the TrimAfterTrigger class."""
         pass
 
     def load_audio(self, audio_dir: str) -> Tuple[Tensor, int]:
