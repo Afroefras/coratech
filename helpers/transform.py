@@ -2,8 +2,8 @@ import torchaudio
 import numpy as np
 from torch import Tensor, fft
 import torchaudio.functional as F
-from typing import Tuple, Callable
 from scipy.io.wavfile import write
+from typing import Tuple, Callable, List
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, decimate
 
@@ -37,11 +37,22 @@ def min_max_scale(x: Tensor) -> Tensor:
 
 
 def generate_synthetic_wave(
-    frequency: int, secs_duration: int, sample_rate: int = 4000
-) -> Tuple[Tensor, int]:
+    frequency: int,
+    secs_duration: int,
+    sample_rate: int = 4000,
+    pre_silence_duration: int = 0,
+    post_silence_duration: int = 0,
+) -> Tuple[np.ndarray, int]:
+
+    pre_silence = np.zeros(int(sample_rate * pre_silence_duration))
+    post_silence = np.zeros(int(sample_rate * post_silence_duration))
+
     t = np.linspace(0, secs_duration, int(sample_rate * secs_duration), endpoint=False)
     wave = 0.5 * np.sin(2 * np.pi * frequency * t)
-    return wave, sample_rate
+
+    combined_wave = np.concatenate([pre_silence, wave, post_silence])
+
+    return combined_wave, sample_rate
 
 
 def save_wave_to_wav(
@@ -78,9 +89,9 @@ def apply_bandpass_filter(
     return filtered_waveform
 
 
-class TrimAfterClicker:
+class TrimAfterTrigger:
     def __init__(self) -> None:
-        """Initializes the TrimAfterClicker class."""
+        """Initializes the TrimAfterTrigger class."""
         pass
 
     def load_audio(self, audio_dir: str) -> Tuple[Tensor, int]:
@@ -113,15 +124,6 @@ class TrimAfterClicker:
         freq_percentile = np.percentile(frequencies, percentile_num)
         return freq_percentile
 
-    def highpass_filter(self, audio: Tensor, sample_rate: int, cutoff: int) -> Tensor:
-        """
-        Applies a highpass filter to the audio tensor.
-        """
-        filtered_audio = torchaudio.functional.highpass_biquad(
-            audio, sample_rate, cutoff
-        )
-        return filtered_audio
-
     def audio_to_abs(self, audio: Tensor) -> Tensor:
         """
         Converts the audio tensor to its absolute value.
@@ -143,59 +145,9 @@ class TrimAfterClicker:
         smoothed = gaussian_filter1d(audio, sigma=sigma)
         return smoothed
 
-    def find_all_peaks(self, audio: Tensor, prominence: float) -> np.array:
-        """
-        Finds the peaks in the audio tensor.
-        """
-        peaks, _ = find_peaks(audio.squeeze(), prominence=prominence)
-        return peaks
-
-    def get_peaks_distances(self, peaks: np.array) -> np.array:
-        """
-        Calculates the distances between the peaks.
-        """
-        peaks_distances = np.diff(peaks)
-        return peaks_distances
-
-    def get_nth_peak(
-        self,
-        peaks: np.array,
-        peaks_distances: np.array,
-        distance_threshold: int,
-        nth_peak: int,
-    ) -> int:
-        """
-        Returns the index of the nth peak.
-        """
-        peaks_copy = peaks[1:].copy()
-        peaks_mask = peaks_distances < distance_threshold
-        peaks_under_threshold = peaks_copy[peaks_mask]
-        peak = peaks_under_threshold[nth_peak]
-        return peak
-
-    def trim_audio(self, audio: Tensor, sample_rate: int, peak: int) -> Tensor:
-        """
-        Trims the audio tensor to the given peak.
-        """
-        begin_at = peak + sample_rate // 20
-        trimmed = audio[:, begin_at:]
-        return trimmed
-
-    def filter_high_freq(
-        self, audio: Tensor, sample_rate: int, freq_percentile: float
-    ) -> Tensor:
-        """
-        Transforms the audio tensor using the highpass filter.
-        """
-        frequencies = self.get_frequencies(audio, sample_rate)
-        cutoff = self.get_frequency_percentile(frequencies, freq_percentile)
-        filtered_audio = self.highpass_filter(audio, sample_rate, cutoff)
-
-        return filtered_audio
-
     def abs_downsample_smooth(
         self, audio: Tensor, downsample_factor: int, sigma: float
-    ) -> int:
+    ) -> np.array:
         """
         Returns the last peak.
         """
@@ -205,53 +157,66 @@ class TrimAfterClicker:
 
         return smoothed
 
-    def find_last_peak(
-        self, audio: Tensor, prominence: float, distance_threshold: int
-    ) -> int:
-        """
-        Returns the upsampled peak.
-        """
-        peaks = self.find_all_peaks(audio, prominence)
-        peaks_distances = self.get_peaks_distances(peaks)
-        last_peak = self.get_nth_peak(
-            peaks, peaks_distances, distance_threshold, nth_peak=-1
-        )
+    def signal_diff(self, signal: Tensor) -> Tensor:
+        curve_diff = np.diff(signal.squeeze())
+        return Tensor(curve_diff)
+    
+    def diff_abs_scale(self, signal: Tensor) -> Tensor:
+        curve_diff = self.signal_diff(signal)
+        abs_diff = curve_diff.abs()
+        scaled_diff = self.scale_audio(abs_diff, scaler=min_max_scale)
 
-        return last_peak
+        return scaled_diff
+    
+    def find_real_peaks(self, signal: Tensor, height: float, prominence: float, upsample_factor: int) -> np.array:
+        peaks, _ = find_peaks(signal, height=height, prominence=prominence)
+        real_peaks = peaks * upsample_factor
+        return real_peaks
+    
+    def split_signal(self, raw_audio: Tensor, peaks: np.array) -> List[Tuple[float, Tensor]]:
+        split_points = np.concatenate(([0], peaks, [raw_audio.shape[-1]]))
+        audio = raw_audio.squeeze()
+        segments = [audio[split_points[i]:split_points[i+1]] for i in range(len(split_points)-1)]
+
+        return segments
+    
+    def keep_min_duration(self, segments: List[Tuple[float, Tensor]], sample_rate: int, min_duration: int) -> List[Tuple[float, Tensor]]:
+        filtered = filter(lambda x: len(x) / sample_rate > min_duration, segments)
+        valid_segments = list(map(lambda x: self.scale_audio(x, min_max_scale).unsqueeze(0), filtered))
+        
+        return valid_segments
 
     def transform(
         self,
         audio_dir: str,
-    ) -> Tensor:
+        synthetic_freq: int,
+        downsample_factor: int,
+        sigma_smooth: int,
+        peaks_height: float,
+        peaks_prominence: float,
+        segment_min_duration: int
+    ) -> Tuple[List[Tensor], int]:
         """
         Transforms the audio tensor.
         """
         audio, sample_rate = self.load_audio(audio_dir)
-        scaled = self.scale_audio(audio, standard_scale)
+        
+        low_freq = synthetic_freq - 1
+        high_freq = synthetic_freq + 1
+        filtered = apply_bandpass_filter(audio, sample_rate, low_freq, high_freq)
 
-        freq_percentile = 99
-        filtered = self.filter_high_freq(scaled, sample_rate, freq_percentile)
-
-        downsample_factor = sample_rate // 220
-        downsample_sigma = 2
         smoothed = self.abs_downsample_smooth(
-            filtered, downsample_factor, downsample_sigma
+            filtered, downsample_factor, sigma_smooth
         )
 
-        smoothed_scaled = min_max_scale(Tensor(smoothed.copy()))
+        scaled_diff = self.diff_abs_scale(smoothed)
 
-        prominence = 0.5
-        distance_threshold = 50
-        downsampled_last_peak = self.find_last_peak(
-            smoothed_scaled, prominence, distance_threshold
-        )
+        peaks = self.find_real_peaks(scaled_diff, peaks_height, peaks_prominence, downsample_factor)
 
-        last_peak = downsampled_last_peak * downsample_factor
-        trimmed = self.trim_audio(scaled, sample_rate, last_peak)
+        segments = self.split_signal(audio, peaks)
+        segments = self.keep_min_duration(segments, sample_rate, segment_min_duration)
 
-        final = min_max_scale(trimmed)
-
-        return final, sample_rate
+        return segments, sample_rate
 
     def trim_to_min_length(
         self,
