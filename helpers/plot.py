@@ -31,7 +31,7 @@ def plot_wavelet_spectrogram(
     fig, ax = plt.subplots(2, 1, figsize=(12, 5), sharex=True)
 
     # Plot the waveform
-    time = np.arange(audio.size) / sample_rate
+    time = np.arange(audio.shape[-1]) / sample_rate
     ax[0].plot(time, audio)
     ax[0].set_title("Waveform")
     ax[0].set_ylabel("Amplitude")
