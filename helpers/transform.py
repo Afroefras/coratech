@@ -205,7 +205,8 @@ class TrimAfterTrigger:
         audio, sample_rate = self.load_audio(audio_dir)
 
         if sample_rate != sample_rate_target:
-            audio = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
+            resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
+            audio = resampler(audio)
 
         filtered = self.filter_freq(audio, sample_rate, synthetic_freq)
 
