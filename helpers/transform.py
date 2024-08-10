@@ -1,9 +1,10 @@
 import torchaudio
 import numpy as np
-from torch import Tensor, fft
+from torch import Tensor
 import torchaudio.functional as F
 from scipy.io.wavfile import write
 from typing import Tuple, Callable, List
+from torchaudio.transforms import Resample
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, decimate
 
@@ -108,21 +109,11 @@ class TrimAfterTrigger:
         scaled = scaler(audio)
         return scaled
 
-    def get_frequencies(self, audio: Tensor, sample_rate: int) -> Tensor:
-        """
-        Calculates the frequencies of the audio tensor.
-        """
-        frequencies = fft.fftfreq(audio.size(1), d=1 / sample_rate)
-        return frequencies
-
-    def get_frequency_percentile(
-        self, frequencies: Tensor, percentile_num: float
-    ) -> float:
-        """
-        Calculates the frequency percentile of the audio tensor.
-        """
-        freq_percentile = np.percentile(frequencies, percentile_num)
-        return freq_percentile
+    def filter_freq(self, audio: Tensor, sample_rate: int, freq: int) -> Tensor:
+        low_freq = freq - 1
+        high_freq = freq + 1
+        filtered = apply_bandpass_filter(audio, sample_rate, low_freq, high_freq)
+        return filtered
 
     def audio_to_abs(self, audio: Tensor) -> Tensor:
         """
@@ -160,58 +151,72 @@ class TrimAfterTrigger:
     def signal_diff(self, signal: Tensor) -> Tensor:
         curve_diff = np.diff(signal.squeeze())
         return Tensor(curve_diff)
-    
+
     def diff_abs_scale(self, signal: Tensor) -> Tensor:
         curve_diff = self.signal_diff(signal)
         abs_diff = curve_diff.abs()
         scaled_diff = self.scale_audio(abs_diff, scaler=min_max_scale)
 
         return scaled_diff
-    
-    def find_real_peaks(self, signal: Tensor, height: float, prominence: float, upsample_factor: int) -> np.array:
+
+    def find_real_peaks(
+        self, signal: Tensor, height: float, prominence: float, upsample_factor: int
+    ) -> np.array:
         peaks, _ = find_peaks(signal, height=height, prominence=prominence)
         real_peaks = peaks * upsample_factor
         return real_peaks
-    
-    def split_signal(self, raw_audio: Tensor, peaks: np.array) -> List[Tuple[float, Tensor]]:
+
+    def split_signal(
+        self, raw_audio: Tensor, peaks: np.array
+    ) -> List[Tuple[float, Tensor]]:
         split_points = np.concatenate(([0], peaks, [raw_audio.shape[-1]]))
         audio = raw_audio.squeeze()
-        segments = [audio[split_points[i]:split_points[i+1]] for i in range(len(split_points)-1)]
+        segments = [
+            audio[split_points[i]:split_points[i + 1]]
+            for i in range(len(split_points) - 1)
+        ]
 
         return segments
-    
-    def keep_min_duration(self, segments: List[Tuple[float, Tensor]], sample_rate: int, min_duration: int) -> List[Tuple[float, Tensor]]:
+
+    def keep_min_duration(
+        self, segments: List[Tuple[float, Tensor]], sample_rate: int, min_duration: int
+    ) -> List[Tuple[float, Tensor]]:
         filtered = filter(lambda x: len(x) / sample_rate > min_duration, segments)
-        valid_segments = list(map(lambda x: self.scale_audio(x, min_max_scale).unsqueeze(0), filtered))
-        
+        valid_segments = list(
+            map(lambda x: self.scale_audio(x, min_max_scale).unsqueeze(0), filtered)
+        )
+
         return valid_segments
 
     def transform(
         self,
         audio_dir: str,
+        sample_rate_target: int,
         synthetic_freq: int,
         downsample_factor: int,
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
-        segment_min_duration: int
+        segment_min_duration: int,
     ) -> Tuple[List[Tensor], int]:
         """
         Transforms the audio tensor.
         """
         audio, sample_rate = self.load_audio(audio_dir)
-        
-        low_freq = synthetic_freq - 1
-        high_freq = synthetic_freq + 1
-        filtered = apply_bandpass_filter(audio, sample_rate, low_freq, high_freq)
 
-        smoothed = self.abs_downsample_smooth(
-            filtered, downsample_factor, sigma_smooth
-        )
+        if sample_rate != sample_rate_target:
+            resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
+            audio = resampler(audio)
+
+        filtered = self.filter_freq(audio, sample_rate, synthetic_freq)
+
+        smoothed = self.abs_downsample_smooth(filtered, downsample_factor, sigma_smooth)
 
         scaled_diff = self.diff_abs_scale(smoothed)
 
-        peaks = self.find_real_peaks(scaled_diff, peaks_height, peaks_prominence, downsample_factor)
+        peaks = self.find_real_peaks(
+            scaled_diff, peaks_height, peaks_prominence, downsample_factor
+        )
 
         segments = self.split_signal(audio, peaks)
         segments = self.keep_min_duration(segments, sample_rate, segment_min_duration)
