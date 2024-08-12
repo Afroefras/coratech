@@ -28,7 +28,7 @@ def plot_wavelet_spectrogram(
     )
 
     # Create the figure and subplots
-    fig, ax = plt.subplots(2, 1, figsize=(12, 5), sharex=True)
+    fig, ax = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
     # Plot the waveform
     time = np.arange(audio.shape[-1]) / sample_rate
