@@ -59,7 +59,9 @@ def generate_synthetic_wave(
 def save_wave_to_wav(
     wave: np.ndarray, sample_rate: int, filename: str, volume: float = 1.0
 ) -> None:
+    wave = wave / np.max(np.abs(wave))
     wave = wave * volume
+    wave = np.clip(wave, -1.0, 1.0)
     wave = np.int16(wave * 32767)
     write(filename, sample_rate, wave)
 
