@@ -60,6 +60,7 @@ def save_wave_to_wav(
     wave: np.ndarray, sample_rate: int, filename: str, volume: float = 1.0
 ) -> None:
     wave = wave * volume
+    wave = np.clip(wave, -1.0, 1.0)
     wave = np.int16(wave * 32767)
     write(filename, sample_rate, wave)
 
@@ -92,7 +93,6 @@ def apply_bandpass_filter(
 
 class TrimAfterTrigger:
     def __init__(self) -> None:
-        """Initializes the TrimAfterTrigger class."""
         pass
 
     def load_audio(self, audio_dir: str) -> Tuple[Tensor, int]:
@@ -136,28 +136,9 @@ class TrimAfterTrigger:
         smoothed = gaussian_filter1d(audio, sigma=sigma)
         return smoothed
 
-    def abs_downsample_smooth(
-        self, audio: Tensor, downsample_factor: int, sigma: float
-    ) -> np.array:
-        """
-        Returns the last peak.
-        """
-        abs_audio = self.audio_to_abs(audio)
-        downsampled = self.downsample_audio(abs_audio, downsample_factor)
-        smoothed = self.smooth_signal(downsampled, sigma)
-
-        return smoothed
-
     def signal_diff(self, signal: Tensor) -> Tensor:
         curve_diff = np.diff(signal.squeeze())
         return Tensor(curve_diff)
-
-    def diff_abs_scale(self, signal: Tensor) -> Tensor:
-        curve_diff = self.signal_diff(signal)
-        abs_diff = curve_diff.abs()
-        scaled_diff = self.scale_audio(abs_diff, scaler=min_max_scale)
-
-        return scaled_diff
 
     def find_real_peaks(
         self, signal: Tensor, height: float, prominence: float, upsample_factor: int
@@ -167,8 +148,11 @@ class TrimAfterTrigger:
         return real_peaks
 
     def split_signal(
-        self, raw_audio: Tensor, peaks: np.array
+        self,
+        raw_audio: Tensor,
+        peaks: np.array
     ) -> List[Tuple[float, Tensor]]:
+        
         split_points = np.concatenate(([0], peaks, [raw_audio.shape[-1]]))
         audio = raw_audio.squeeze()
         segments = [
@@ -179,8 +163,12 @@ class TrimAfterTrigger:
         return segments
 
     def keep_min_duration(
-        self, segments: List[Tuple[float, Tensor]], sample_rate: int, min_duration: int
+        self,
+        segments: List[Tuple[float, Tensor]],
+        sample_rate: int,
+        min_duration: int
     ) -> List[Tuple[float, Tensor]]:
+        
         filtered = filter(lambda x: len(x) / sample_rate > min_duration, segments)
         valid_segments = list(
             map(lambda x: self.scale_audio(x, min_max_scale).unsqueeze(0), filtered)
@@ -199,20 +187,22 @@ class TrimAfterTrigger:
         peaks_prominence: float,
         segment_min_duration: int,
     ) -> Tuple[List[Tensor], int]:
-        """
-        Transforms the audio tensor.
-        """
-        audio, sample_rate = self.load_audio(audio_dir)
+        
+        audio, sample_rate = self.load_audio(str(audio_dir))
 
         if sample_rate != sample_rate_target:
             resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
             audio = resampler(audio)
 
         filtered = self.filter_freq(audio, sample_rate, synthetic_freq)
+        
+        abs_filtered = self.audio_to_abs(filtered)
+        downsampled = self.downsample_audio(abs_filtered, downsample_factor)
+        smoothed = self.smooth_signal(downsampled, sigma_smooth)
 
-        smoothed = self.abs_downsample_smooth(filtered, downsample_factor, sigma_smooth)
-
-        scaled_diff = self.diff_abs_scale(smoothed)
+        curve_diff = self.signal_diff(smoothed)
+        abs_diff = self.audio_to_abs(curve_diff)
+        scaled_diff = self.scale_audio(abs_diff, scaler=min_max_scale)
 
         peaks = self.find_real_peaks(
             scaled_diff, peaks_height, peaks_prominence, downsample_factor
