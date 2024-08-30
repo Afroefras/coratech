@@ -188,7 +188,7 @@ class TrimAfterTrigger:
         segment_min_duration: int,
     ) -> Tuple[List[Tensor], int]:
         
-        audio, sample_rate = self.load_audio(audio_dir)
+        audio, sample_rate = self.load_audio(str(audio_dir))
 
         if sample_rate != sample_rate_target:
             resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
