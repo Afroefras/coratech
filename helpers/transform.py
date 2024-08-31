@@ -162,37 +162,24 @@ class TrimAfterTrigger:
 
         return segments
 
-    def keep_min_duration(
-        self,
-        segments: List[Tuple[float, Tensor]],
-        sample_rate: int,
-        min_duration: int
-    ) -> List[Tuple[float, Tensor]]:
-        
-        filtered = filter(lambda x: len(x) / sample_rate > min_duration, segments)
-        valid_segments = list(
-            map(lambda x: self.scale_audio(x, min_max_scale).unsqueeze(0), filtered)
-        )
-
-        return valid_segments
-
     def transform(
         self,
         audio_dir: str,
-        sample_rate_target: int,
         synthetic_freq: int,
         downsample_factor: int,
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
-        segment_min_duration: int,
+        sample_rate_target: int=None,
     ) -> Tuple[List[Tensor], int]:
         
         audio, sample_rate = self.load_audio(str(audio_dir))
 
-        if sample_rate != sample_rate_target:
-            resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
-            audio = resampler(audio)
+        if sample_rate_target is not None:
+            if sample_rate != sample_rate_target:
+                resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
+                audio = resampler(audio)
+                sample_rate = sample_rate_target
 
         filtered = self.filter_freq(audio, sample_rate, synthetic_freq)
         
@@ -209,7 +196,6 @@ class TrimAfterTrigger:
         )
 
         segments = self.split_signal(audio, peaks)
-        segments = self.keep_min_duration(segments, sample_rate, segment_min_duration)
 
         return segments, sample_rate
 
