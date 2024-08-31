@@ -199,40 +199,50 @@ class TrimAfterTrigger:
 
         return segments, sample_rate
 
-    def trim_to_min_length(
-        self,
-        mobile_audio: Tensor,
-        mobile_sample_rate: int,
-        digital_audio: Tensor,
-        digital_sample_rate: int,
-    ) -> Tuple[Tensor, Tensor]:
-        """
-        Trims the mobile and digital audio tensors to the minimum duration
-        between the two. This ensures both audio samples have the same length
-        for subsequent processing.
-        """
-        mobile_seconds = mobile_audio.size(1) / mobile_sample_rate
-        digital_seconds = digital_audio.size(1) / digital_sample_rate
+    def calculate_durations(self, segments: list[Tensor], sample_rate: int) -> list:
+        return [len(x) / sample_rate for x in segments]
+    
+    def find_trigger(self, durations: list[float], trigger_duration: float, window: float, last_trigger: bool=False) -> int:
+        if last_trigger:
+            durations = durations[::-1]
 
-        min_seconds = int(min(mobile_seconds, digital_seconds))
+        for i, duration in enumerate(durations):
+            if abs(duration - trigger_duration) <= window:
+                if last_trigger:
+                    return len(durations) - i
+                else:
+                    return i
+        
+        return -1
+    
+    def trim_between_triggers(self, segments: list[Tensor], sample_rate: int, trigger_duration: float, window: float) -> list[Tensor]:
+        durations = self.calculate_durations(segments, sample_rate)
+        first_trigger = self.find_trigger(durations, trigger_duration, window)
+        last_trigger = self.find_trigger(durations, trigger_duration, window, last_trigger=True)
+        trimmed = segments[first_trigger + 1: last_trigger]
+        return trimmed
 
-        mobile_audio = mobile_audio[:, : min_seconds * mobile_sample_rate]
-        digital_audio = digital_audio[:, : min_seconds * digital_sample_rate]
-
-        return mobile_audio, digital_audio
-
-    def align_audios(
-        self, mobile_dir: str, digital_dir: str
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-        """
-        Aligns the audio from a mobile recording and a digital stethoscope
-        by trimming both to the minimum duration and ensuring the sample rate
-        is consistent for both.
-        """
-        mobile_audio, mobile_sample_rate = self.transform(mobile_dir)
-        digital_audio, digital_sample_rate = self.transform(digital_dir)
-
-        mobile_audio, digital_audio = self.trim_to_min_length(
-            mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
+    def sync_records(self, mobile_dir: str, stethos_dir: str, **kwargs) -> list[Tuple[Tensor]]:
+        stethos_segments, sample_rate = self.transform(
+            audio_dir=stethos_dir,
+            synthetic_freq=kwargs["synthetic_freq"],
+            downsample_factor=kwargs["downsample_factor"],
+            sigma_smooth=kwargs["sigma_smooth"],
+            peaks_height=kwargs["peaks_height"],
+            peaks_prominence=kwargs["peaks_prominence"],
         )
-        return mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
+
+        mobile_segments, _ = self.transform(
+            audio_dir=mobile_dir,
+            synthetic_freq=kwargs["synthetic_freq"],
+            downsample_factor=kwargs["downsample_factor"],
+            sigma_smooth=kwargs["sigma_smooth"],
+            peaks_height=kwargs["peaks_height"],
+            peaks_prominence=kwargs["peaks_prominence"],
+            sample_rate_target=sample_rate
+        )
+
+        mobile = self.trim_between_triggers(mobile_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"])
+        stethos = self.trim_between_triggers(stethos_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"])
+
+        return list(zip(mobile, stethos)), sample_rate
