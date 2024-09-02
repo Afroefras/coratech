@@ -60,10 +60,14 @@ def save_wave_to_wav(
     wave: np.ndarray, sample_rate: int, filename: str, volume: float = 1.0
 ) -> None:
     wave = wave * volume
-    wave = np.clip(wave, -1.0, 1.0)
-    wave = np.int16(wave * 32767)
-    write(filename, sample_rate, wave)
+    bit_limit = 2**15 - 1
 
+    wave = np.int16(wave * bit_limit)
+    wave = np.clip(wave, -bit_limit, bit_limit)
+
+    filename += '.wav'
+    write(filename, sample_rate, wave)
+    print(f"File '{filename}' was saved succesfully!")
 
 def get_positive_freq_and_magn(
     audio: np.array, sample_rate: int
