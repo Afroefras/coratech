@@ -65,9 +65,10 @@ def save_wave_to_wav(
     wave = np.int16(wave * bit_limit)
     wave = np.clip(wave, -bit_limit, bit_limit)
 
-    filename += '.wav'
+    filename += ".wav"
     write(filename, sample_rate, wave)
     print(f"File '{filename}' was saved succesfully!")
+
 
 def get_positive_freq_and_magn(
     audio: np.array, sample_rate: int
@@ -152,15 +153,13 @@ class TrimAfterTrigger:
         return real_peaks
 
     def split_signal(
-        self,
-        raw_audio: Tensor,
-        peaks: np.array
+        self, raw_audio: Tensor, peaks: np.array
     ) -> List[Tuple[float, Tensor]]:
-        
+
         split_points = np.concatenate(([0], peaks, [raw_audio.shape[-1]]))
         audio = raw_audio.squeeze()
         segments = [
-            audio[split_points[i]:split_points[i + 1]]
+            audio[split_points[i] : split_points[i + 1]]
             for i in range(len(split_points) - 1)
         ]
 
@@ -174,9 +173,9 @@ class TrimAfterTrigger:
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
-        sample_rate_target: int=None,
+        sample_rate_target: int = None,
     ) -> Tuple[List[Tensor], int]:
-        
+
         audio, sample_rate = self.load_audio(str(audio_dir))
 
         if sample_rate_target is not None:
@@ -186,7 +185,7 @@ class TrimAfterTrigger:
                 sample_rate = sample_rate_target
 
         filtered = self.filter_freq(audio, sample_rate, synthetic_freq)
-        
+
         abs_filtered = self.audio_to_abs(filtered)
         downsampled = self.downsample_audio(abs_filtered, downsample_factor)
         smoothed = self.smooth_signal(downsampled, sigma_smooth)
@@ -205,8 +204,14 @@ class TrimAfterTrigger:
 
     def calculate_durations(self, segments: list[Tensor], sample_rate: int) -> list:
         return [len(x) / sample_rate for x in segments]
-    
-    def find_trigger(self, durations: list[float], trigger_duration: float, window: float, last_trigger: bool=False) -> int:
+
+    def find_trigger(
+        self,
+        durations: list[float],
+        trigger_duration: float,
+        window: float,
+        last_trigger: bool = False,
+    ) -> int:
         if last_trigger:
             durations = durations[::-1]
 
@@ -216,17 +221,27 @@ class TrimAfterTrigger:
                     return len(durations) - i
                 else:
                     return i
-        
+
         return -1
-    
-    def trim_between_triggers(self, segments: list[Tensor], sample_rate: int, trigger_duration: float, window: float) -> list[Tensor]:
+
+    def trim_between_triggers(
+        self,
+        segments: list[Tensor],
+        sample_rate: int,
+        trigger_duration: float,
+        window: float,
+    ) -> list[Tensor]:
         durations = self.calculate_durations(segments, sample_rate)
         first_trigger = self.find_trigger(durations, trigger_duration, window)
-        last_trigger = self.find_trigger(durations, trigger_duration, window, last_trigger=True)
-        trimmed = segments[first_trigger + 1: last_trigger]
+        last_trigger = self.find_trigger(
+            durations, trigger_duration, window, last_trigger=True
+        )
+        trimmed = segments[first_trigger + 1 : last_trigger]
         return trimmed
 
-    def sync_records(self, mobile_dir: str, stethos_dir: str, **kwargs) -> list[Tuple[Tensor]]:
+    def sync_records(
+        self, mobile_dir: str, stethos_dir: str, **kwargs
+    ) -> list[Tuple[Tensor]]:
         stethos_segments, sample_rate = self.transform(
             audio_dir=stethos_dir,
             synthetic_freq=kwargs["synthetic_freq"],
@@ -243,10 +258,14 @@ class TrimAfterTrigger:
             sigma_smooth=kwargs["sigma_smooth"],
             peaks_height=kwargs["peaks_height"],
             peaks_prominence=kwargs["peaks_prominence"],
-            sample_rate_target=sample_rate
+            sample_rate_target=sample_rate,
         )
 
-        mobile = self.trim_between_triggers(mobile_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"])
-        stethos = self.trim_between_triggers(stethos_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"])
+        mobile = self.trim_between_triggers(
+            mobile_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"]
+        )
+        stethos = self.trim_between_triggers(
+            stethos_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"]
+        )
 
         return list(zip(mobile, stethos)), sample_rate
