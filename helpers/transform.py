@@ -60,9 +60,14 @@ def save_wave_to_wav(
     wave: np.ndarray, sample_rate: int, filename: str, volume: float = 1.0
 ) -> None:
     wave = wave * volume
-    wave = np.clip(wave, -1.0, 1.0)
-    wave = np.int16(wave * 32767)
+    bit_limit = 2**15 - 1
+
+    wave = np.int16(wave * bit_limit)
+    wave = np.clip(wave, -bit_limit, bit_limit)
+
+    filename += ".wav"
     write(filename, sample_rate, wave)
+    print(f"File '{filename}' was saved succesfully!")
 
 
 def get_positive_freq_and_magn(
@@ -148,54 +153,39 @@ class TrimAfterTrigger:
         return real_peaks
 
     def split_signal(
-        self,
-        raw_audio: Tensor,
-        peaks: np.array
+        self, raw_audio: Tensor, peaks: np.array
     ) -> List[Tuple[float, Tensor]]:
-        
+
         split_points = np.concatenate(([0], peaks, [raw_audio.shape[-1]]))
         audio = raw_audio.squeeze()
         segments = [
-            audio[split_points[i]:split_points[i + 1]]
+            audio[split_points[i] : split_points[i + 1]]
             for i in range(len(split_points) - 1)
         ]
 
         return segments
 
-    def keep_min_duration(
-        self,
-        segments: List[Tuple[float, Tensor]],
-        sample_rate: int,
-        min_duration: int
-    ) -> List[Tuple[float, Tensor]]:
-        
-        filtered = filter(lambda x: len(x) / sample_rate > min_duration, segments)
-        valid_segments = list(
-            map(lambda x: self.scale_audio(x, min_max_scale).unsqueeze(0), filtered)
-        )
-
-        return valid_segments
-
     def transform(
         self,
         audio_dir: str,
-        sample_rate_target: int,
         synthetic_freq: int,
         downsample_factor: int,
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
-        segment_min_duration: int,
+        sample_rate_target: int = None,
     ) -> Tuple[List[Tensor], int]:
-        
+
         audio, sample_rate = self.load_audio(str(audio_dir))
 
-        if sample_rate != sample_rate_target:
-            resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
-            audio = resampler(audio)
+        if sample_rate_target is not None:
+            if sample_rate != sample_rate_target:
+                resampler = Resample(orig_freq=sample_rate, new_freq=sample_rate_target)
+                audio = resampler(audio)
+                sample_rate = sample_rate_target
 
         filtered = self.filter_freq(audio, sample_rate, synthetic_freq)
-        
+
         abs_filtered = self.audio_to_abs(filtered)
         downsampled = self.downsample_audio(abs_filtered, downsample_factor)
         smoothed = self.smooth_signal(downsampled, sigma_smooth)
@@ -209,44 +199,73 @@ class TrimAfterTrigger:
         )
 
         segments = self.split_signal(audio, peaks)
-        segments = self.keep_min_duration(segments, sample_rate, segment_min_duration)
 
         return segments, sample_rate
 
-    def trim_to_min_length(
+    def calculate_durations(self, segments: list[Tensor], sample_rate: int) -> list:
+        return [len(x) / sample_rate for x in segments]
+
+    def find_trigger(
         self,
-        mobile_audio: Tensor,
-        mobile_sample_rate: int,
-        digital_audio: Tensor,
-        digital_sample_rate: int,
-    ) -> Tuple[Tensor, Tensor]:
-        """
-        Trims the mobile and digital audio tensors to the minimum duration
-        between the two. This ensures both audio samples have the same length
-        for subsequent processing.
-        """
-        mobile_seconds = mobile_audio.size(1) / mobile_sample_rate
-        digital_seconds = digital_audio.size(1) / digital_sample_rate
+        durations: list[float],
+        trigger_duration: float,
+        window: float,
+        last_trigger: bool = False,
+    ) -> int:
+        if last_trigger:
+            durations = durations[::-1]
 
-        min_seconds = int(min(mobile_seconds, digital_seconds))
+        for i, duration in enumerate(durations):
+            if abs(duration - trigger_duration) <= window:
+                if last_trigger:
+                    return len(durations) - i
+                else:
+                    return i
 
-        mobile_audio = mobile_audio[:, : min_seconds * mobile_sample_rate]
-        digital_audio = digital_audio[:, : min_seconds * digital_sample_rate]
+        return -1
 
-        return mobile_audio, digital_audio
-
-    def align_audios(
-        self, mobile_dir: str, digital_dir: str
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-        """
-        Aligns the audio from a mobile recording and a digital stethoscope
-        by trimming both to the minimum duration and ensuring the sample rate
-        is consistent for both.
-        """
-        mobile_audio, mobile_sample_rate = self.transform(mobile_dir)
-        digital_audio, digital_sample_rate = self.transform(digital_dir)
-
-        mobile_audio, digital_audio = self.trim_to_min_length(
-            mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
+    def trim_between_triggers(
+        self,
+        segments: list[Tensor],
+        sample_rate: int,
+        trigger_duration: float,
+        window: float,
+    ) -> list[Tensor]:
+        durations = self.calculate_durations(segments, sample_rate)
+        first_trigger = self.find_trigger(durations, trigger_duration, window)
+        last_trigger = self.find_trigger(
+            durations, trigger_duration, window, last_trigger=True
         )
-        return mobile_audio, mobile_sample_rate, digital_audio, digital_sample_rate
+        trimmed = segments[first_trigger + 1 : last_trigger]
+        return trimmed
+
+    def sync_records(
+        self, mobile_dir: str, stethos_dir: str, **kwargs
+    ) -> list[Tuple[Tensor]]:
+        stethos_segments, sample_rate = self.transform(
+            audio_dir=stethos_dir,
+            synthetic_freq=kwargs["synthetic_freq"],
+            downsample_factor=kwargs["downsample_factor"],
+            sigma_smooth=kwargs["sigma_smooth"],
+            peaks_height=kwargs["peaks_height"],
+            peaks_prominence=kwargs["peaks_prominence"],
+        )
+
+        mobile_segments, _ = self.transform(
+            audio_dir=mobile_dir,
+            synthetic_freq=kwargs["synthetic_freq"],
+            downsample_factor=kwargs["downsample_factor"],
+            sigma_smooth=kwargs["sigma_smooth"],
+            peaks_height=kwargs["peaks_height"],
+            peaks_prominence=kwargs["peaks_prominence"],
+            sample_rate_target=sample_rate,
+        )
+
+        mobile = self.trim_between_triggers(
+            mobile_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"]
+        )
+        stethos = self.trim_between_triggers(
+            stethos_segments, sample_rate, kwargs["trigger_duration"], kwargs["window"]
+        )
+
+        return list(zip(mobile, stethos)), sample_rate

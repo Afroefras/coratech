@@ -28,7 +28,7 @@ def plot_wavelet_spectrogram(
     )
 
     # Create the figure and subplots
-    fig, ax = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    fig, ax = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
 
     # Plot the waveform
     time = np.arange(audio.shape[-1]) / sample_rate
@@ -58,10 +58,9 @@ def plot_wavelet_spectrogram(
 def plot_audio_fft(audio: np.array, sample_rate: int) -> None:
     freq, magn = get_positive_freq_and_magn(audio, sample_rate)
 
-    plt.figure(figsize=(12, 4))
+    plt.figure(figsize=(12, 3))
     plt.plot(freq, magn)
     plt.title("Distribución de Frecuencias")
     plt.xlabel("Frecuencia (Hz)")
     plt.ylabel("Magnitud")
-    plt.grid()
     plt.show()
