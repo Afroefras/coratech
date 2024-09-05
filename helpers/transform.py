@@ -1,6 +1,8 @@
+import torch
 import torchaudio
 import numpy as np
 from torch import Tensor
+from pathlib import Path
 import torchaudio.functional as F
 from scipy.io.wavfile import write
 from typing import Tuple, Callable, List
@@ -94,6 +96,20 @@ def apply_bandpass_filter(
 
     filtered_waveform = F.bandpass_biquad(waveform, sample_rate, central_freq, Q)
     return filtered_waveform
+
+
+def trim_audio(
+    audio: Tensor, sample_rate: int, start_at: float = None, end_at: float = None
+):
+    if start_at is None:
+        start_at = 0
+    if end_at is None:
+        end_at = audio.shape[-1] / sample_rate
+
+    sample_start = int(start_at * sample_rate)
+    sample_end = int(end_at * sample_rate)
+    audio = audio[:, sample_start:sample_end].clone()
+    return audio
 
 
 class TrimAfterTrigger:
@@ -285,15 +301,15 @@ class StudentAuscultationManikin(TrimAfterTrigger):
 
     def cut_snippet(self, audio: Tensor, sample_rate: int, secs: int) -> Tensor:
         cut_on = secs * sample_rate
-        return audio[:cut_on]
+        return audio[:, :cut_on]
 
-    def find_first_heartbeat(
+    def find_heartbeats(
         self,
         audio: Tensor,
         downsample_factor: int,
         peaks_height: float,
         peaks_prominence: float,
-    ) -> None:
+    ) -> np.array:
         abs_audio = self.audio_to_abs(audio)
         downsampled = self.downsample_audio(abs_audio, downsample_factor)
         downsampled = Tensor(downsampled.copy())
@@ -301,40 +317,81 @@ class StudentAuscultationManikin(TrimAfterTrigger):
         scaled.squeeze_()
         peaks, _ = find_peaks(scaled, height=peaks_height, prominence=peaks_prominence)
 
-        return peaks[0] * downsample_factor
+        return peaks * downsample_factor
+
+    def get_first_heartbeat(self, mobile: np.array, stethos: np.array) -> int:
+        return mobile[0], stethos[0]
 
     def set_min_length(self, mobile: Tensor, stethos: Tensor) -> Tuple[Tensor, Tensor]:
-        min_length = min(len(mobile), len(stethos))
-        mobile = mobile[:min_length]
-        stethos = stethos[:min_length]
+        min_length = min(mobile.shape[-1], stethos.shape[-1])
+        mobile = mobile[:, :min_length]
+        stethos = stethos[:, :min_length]
         return mobile, stethos
 
+    def cut_and_save_match(
+        self,
+        mobile: Tensor,
+        stethos: Tensor,
+        sample_rate: int,
+        secs: int,
+        output_dir: str,
+        filename: str,
+        suffix: str = None,
+    ) -> None:
+
+        n = sample_rate * secs
+        total_length = mobile.shape[-1]
+        num_segments = total_length // n
+        file_dir = Path(output_dir)
+
+        suffix = f"_{suffix}" if suffix is not None else ""
+        base_filename = Path(filename).stem
+
+        for i in range(num_segments):
+            start_idx = i * n
+            end_idx = start_idx + n
+            mobile_segment = mobile[:, start_idx:end_idx]
+            stethos_segment = stethos[:, start_idx:end_idx]
+
+            filename = f"{base_filename}{suffix}_{str(i).zfill(2)}.pt"
+            filepath = file_dir.joinpath(filename)
+            torch.save((mobile_segment, stethos_segment, sample_rate), filepath)
+
+    def load_recordings(
+        self, mobile_dir: str, stethos_dir: str
+    ) -> Tuple[Tensor, Tensor, int]:
+        stethos_audio, stethos_sample_rate = self.load_audio(str(stethos_dir))
+        mobile_audio, mobile_sample_rate = self.load_audio(str(mobile_dir))
+        mobile_audio, mobile_sample_rate = self.resample_audio(
+            mobile_audio, mobile_sample_rate, stethos_sample_rate
+        )
+        return mobile_audio, stethos_audio, stethos_sample_rate
+
     def match_heartbeats(
-        self, mobile_dir: str, stethos_dir: str, snippet_secs: int, **kwargs
+        self,
+        mobile_audio: Tensor,
+        stethos_audio: Tensor,
+        sample_rate: int,
+        snippet_secs: int,
+        **kwargs,
     ) -> Tuple[Tensor, Tensor]:
+
         downsample_factor = kwargs["downsample_factor"]
         peaks_height = kwargs["peaks_height"]
         peaks_prominence = kwargs["peaks_prominence"]
 
-        stethos_audio, stethos_sample_rate = self.load_audio(str(stethos_dir))
-        mobile_audio, mobile_sample_rate = self.load_audio(str(mobile_dir))
+        mobile_snippet = self.cut_snippet(mobile_audio, sample_rate, snippet_secs)
+        stethos_snippet = self.cut_snippet(stethos_audio, sample_rate, snippet_secs)
 
-        mobile_audio, mobile_sample_rate = self.resample_audio(
-            mobile_audio, mobile_sample_rate, stethos_sample_rate
-        )
-
-        mobile_snippet = self.cut_snippet(
-            mobile_audio, mobile_sample_rate, snippet_secs
-        )
-        stethos_snippet = self.cut_snippet(
-            stethos_audio, stethos_sample_rate, snippet_secs
-        )
-
-        mobile_heartbeat = self.find_first_heartbeat(
+        mobile_heartbeats = self.find_heartbeats(
             mobile_snippet, downsample_factor, peaks_height, peaks_prominence
         )
-        stethos_heartbeat = self.find_first_heartbeat(
+        stethos_heartbeats = self.find_heartbeats(
             stethos_snippet, downsample_factor, peaks_height, peaks_prominence
+        )
+
+        mobile_heartbeat, stethos_heartbeat = self.get_first_heartbeat(
+            mobile_heartbeats, stethos_heartbeats
         )
 
         mobile_trim = mobile_audio[:, mobile_heartbeat:].clone()
@@ -345,4 +402,4 @@ class StudentAuscultationManikin(TrimAfterTrigger):
         mobile = self.scale_audio(mobile, min_max_scale)
         stethos = self.scale_audio(stethos, min_max_scale)
 
-        return mobile, stethos, stethos_sample_rate
+        return mobile, stethos
