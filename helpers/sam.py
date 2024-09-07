@@ -38,7 +38,7 @@ class StudentAuscultationManikin(FindTrigger):
         downsample_factor: int,
         peaks_height: float,
         peaks_prominence: float,
-    ) -> int:
+    ) -> Tensor:
 
         snippet = AU.trim_audio(audio, sample_rate, end_at=snippet_secs)
         heartbeats = self.find_heartbeats(

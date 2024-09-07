@@ -25,7 +25,15 @@ class FindTrigger:
         )
 
         return mobile_audio, stethos_audio, stethos_sample_rate
+    
+    def set_min_length(self, mobile: Tensor, stethos: Tensor) -> Tuple[Tensor, Tensor]:
+        min_length = min(mobile.shape[-1], stethos.shape[-1])
 
+        mobile = mobile[:, :min_length].clone()
+        stethos = stethos[:, :min_length].clone()
+
+        return mobile, stethos
+    
     def find_trigger_peaks(
         self,
         audio: Tensor,
@@ -59,14 +67,69 @@ class FindTrigger:
         )
 
         return peaks * downsample_factor
+    
+    def trim_at_last_trigger(
+        self,
+        audio: Tensor,
+        sample_rate: int,
+        synthetic_freq: int,
+        downsample_factor: int,
+        sigma_smooth: int,
+        peaks_height: float,
+        peaks_prominence: float,
+    ) -> Tensor:
+        
+        triggers = self.find_trigger_peaks(
+            audio,
+            sample_rate,
+            synthetic_freq,
+            downsample_factor,
+            sigma_smooth,
+            peaks_height,
+            peaks_prominence,
+        )
+        last_trigger = triggers[-1] / sample_rate
 
-    def set_min_length(self, mobile: Tensor, stethos: Tensor) -> Tuple[Tensor, Tensor]:
-        min_length = min(mobile.shape[-1], stethos.shape[-1])
+        trim = AU.trim_audio(audio, sample_rate, start_at=last_trigger)
+        return trim
 
-        mobile = mobile[:, :min_length].clone()
-        stethos = stethos[:, :min_length].clone()
+    def match_last_trigger(
+        self,
+        mobile_audio: Tensor,
+        stethos_audio: Tensor,
+        sample_rate: int,
+        synthetic_freq: int,
+        downsample_factor: int,
+        sigma_smooth: int,
+        peaks_height: float,
+        peaks_prominence: float,
+    ) -> Tuple[Tensor, Tensor]:
+        
+        mobile_trim = self.trim_at_last_trigger(
+            mobile_audio,
+            sample_rate,
+            synthetic_freq,
+            downsample_factor,
+            sigma_smooth,
+            peaks_height,
+            peaks_prominence,
+        )
+        stethos_trim = self.trim_at_last_trigger(
+            stethos_audio,
+            sample_rate,
+            synthetic_freq,
+            downsample_factor,
+            sigma_smooth,
+            peaks_height,
+            peaks_prominence,
+        )
 
-        return mobile, stethos
+        mobile, stethos = self.set_min_length(mobile_trim, stethos_trim)
+
+        mobile_scaled = AU.min_max_scale(mobile)
+        stethos_scaled = AU.min_max_scale(stethos)
+
+        return mobile_scaled, stethos_scaled
 
     def cut_and_save_match(
         self,
