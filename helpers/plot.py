@@ -66,12 +66,15 @@ def plot_audio_fft(audio: np.array, sample_rate: int) -> None:
     plt.show()
 
 
-def compare_audios(mobile: np.array, stethos: np.array, sample_rate: int) -> None:
+def compare_audios(
+    mobile: np.array, stethos: np.array, sample_rate: int, offset: float = 0.0
+) -> None:
     time_axis = np.linspace(0, len(stethos) / sample_rate, num=len(stethos))
     plt.figure(figsize=(12, 6))
-    plt.plot(time_axis, mobile, label="Celular", alpha=0.5, color="skyblue")
-    plt.plot(time_axis, stethos, label="Estetoscopio")
+    plt.plot(
+        time_axis, stethos + offset, label="Estetoscopio", alpha=0.7, color="skyblue"
+    )
+    plt.plot(time_axis, mobile, label="Celular", alpha=0.7)
     plt.xlabel("Tiempo (segundos)")
-    plt.ylabel("Amplitud")
     plt.legend()
     plt.show()
