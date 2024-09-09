@@ -25,7 +25,7 @@ class FindTrigger:
         )
 
         return mobile_audio, stethos_audio, stethos_sample_rate
-    
+
     def set_min_length(self, mobile: Tensor, stethos: Tensor) -> Tuple[Tensor, Tensor]:
         min_length = min(mobile.shape[-1], stethos.shape[-1])
 
@@ -33,7 +33,7 @@ class FindTrigger:
         stethos = stethos[:, :min_length].clone()
 
         return mobile, stethos
-    
+
     def find_trigger_peaks(
         self,
         audio: Tensor,
@@ -43,7 +43,7 @@ class FindTrigger:
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
-        snippet_secs: float=None,
+        snippet_secs: float = None,
     ) -> Tuple[List[Tensor], int]:
 
         snippet = AU.trim_audio(audio, sample_rate, end_at=snippet_secs)
@@ -70,7 +70,7 @@ class FindTrigger:
         )
 
         return peaks * downsample_factor
-    
+
     def trim_at_last_trigger(
         self,
         audio: Tensor,
@@ -82,7 +82,7 @@ class FindTrigger:
         peaks_prominence: float,
         snippet_secs: float,
     ) -> Tensor:
-        
+
         triggers = self.find_trigger_peaks(
             audio,
             sample_rate,
@@ -110,7 +110,7 @@ class FindTrigger:
         peaks_prominence: float,
         snippet_secs: float,
     ) -> Tuple[Tensor, Tensor]:
-        
+
         mobile_trim = self.trim_at_last_trigger(
             mobile_audio,
             sample_rate,
