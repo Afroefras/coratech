@@ -43,11 +43,14 @@ class FindTrigger:
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
+        snippet_secs: float=None,
     ) -> Tuple[List[Tensor], int]:
+
+        snippet = AU.trim_audio(audio, sample_rate, end_at=snippet_secs)
 
         low_freq = synthetic_freq - 1
         high_freq = synthetic_freq + 1
-        filtered = AU.apply_bandpass_filter(audio, sample_rate, low_freq, high_freq)
+        filtered = AU.apply_bandpass_filter(snippet, sample_rate, low_freq, high_freq)
 
         abs_filtered = filtered.abs()
 
@@ -77,6 +80,7 @@ class FindTrigger:
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
+        snippet_secs: float,
     ) -> Tensor:
         
         triggers = self.find_trigger_peaks(
@@ -87,6 +91,7 @@ class FindTrigger:
             sigma_smooth,
             peaks_height,
             peaks_prominence,
+            snippet_secs,
         )
         last_trigger = triggers[-1] / sample_rate
 
@@ -103,6 +108,7 @@ class FindTrigger:
         sigma_smooth: int,
         peaks_height: float,
         peaks_prominence: float,
+        snippet_secs: float,
     ) -> Tuple[Tensor, Tensor]:
         
         mobile_trim = self.trim_at_last_trigger(
@@ -113,6 +119,7 @@ class FindTrigger:
             sigma_smooth,
             peaks_height,
             peaks_prominence,
+            snippet_secs,
         )
         stethos_trim = self.trim_at_last_trigger(
             stethos_audio,
@@ -122,6 +129,7 @@ class FindTrigger:
             sigma_smooth,
             peaks_height,
             peaks_prominence,
+            snippet_secs,
         )
 
         mobile, stethos = self.set_min_length(mobile_trim, stethos_trim)
