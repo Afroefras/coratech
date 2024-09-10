@@ -4,6 +4,7 @@ import numpy as np
 from torch import Tensor
 from pathlib import Path
 from typing import Tuple, List
+import torch.nn.functional as F
 import helpers.audio_utils as AU
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, decimate
@@ -139,33 +140,34 @@ class FindTrigger:
 
         return mobile_scaled, stethos_scaled
 
-    def cut_and_save_match(
+    def make_heartbeats_chunks(
+        self, audio: Tensor, sample_rate: int, chunk_secs: float
+    ) -> Tensor:
+        chunk_size = int(sample_rate * chunk_secs)
+        chunks = torch.split(audio, chunk_size, dim=-1)
+
+        if chunks[-1].size(-1) < chunk_size:
+            padding_size = chunk_size - chunks[-1].size(-1)
+            chunks = list(chunks)
+            chunks[-1] = F.pad(chunks[-1], (0, padding_size))
+
+        return torch.stack(chunks, dim=0)
+
+    def save_match(
         self,
         mobile: Tensor,
         stethos: Tensor,
-        sample_rate: int,
-        secs: int,
         output_dir: str,
         filename: str,
         suffix: str = None,
     ) -> None:
 
-        n = sample_rate * secs
-        total_length = mobile.shape[-1]
-        num_segments = total_length // n
         file_dir = Path(output_dir)
-
-        suffix = f"_{suffix}" if suffix is not None else ""
         base_filename = Path(filename).stem
+        suffix = "" if suffix is None else f"_{suffix}"
 
-        for i in range(num_segments):
-            start_idx = i * n
-            end_idx = start_idx + n
+        filename = f"{base_filename}{suffix}.pt"
+        filepath = file_dir.joinpath(filename)
 
-            mobile_segment = mobile[:, start_idx:end_idx]
-            stethos_segment = stethos[:, start_idx:end_idx]
-
-            filename = f"{base_filename}{suffix}_{str(i).zfill(2)}.pt"
-            filepath = file_dir.joinpath(filename)
-
-            torch.save((mobile_segment, stethos_segment), filepath)
+        torch.save((mobile, stethos), filepath)
+        print(f"File '{filepath}' was saved succesfully!")
