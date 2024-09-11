@@ -157,6 +157,7 @@ class FindTrigger:
         self,
         mobile: Tensor,
         stethos: Tensor,
+        sample_rate: int,
         output_dir: str,
         filename: str,
         suffix: str = None,
@@ -169,5 +170,5 @@ class FindTrigger:
         filename = f"{base_filename}{suffix}.pt"
         filepath = file_dir.joinpath(filename)
 
-        torch.save((mobile, stethos), filepath)
+        torch.save((mobile, stethos, sample_rate), filepath)
         print(f"File '{filepath}' was saved succesfully!")
