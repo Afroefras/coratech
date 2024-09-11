@@ -140,23 +140,11 @@ class FindTrigger:
 
         return mobile_scaled, stethos_scaled
 
-    def make_heartbeats_chunks(
-        self, audio: Tensor, sample_rate: int, chunk_secs: float
-    ) -> Tensor:
-        chunk_size = int(sample_rate * chunk_secs)
-        chunks = torch.split(audio, chunk_size, dim=-1)
-
-        if chunks[-1].size(-1) < chunk_size:
-            padding_size = chunk_size - chunks[-1].size(-1)
-            chunks = list(chunks)
-            chunks[-1] = F.pad(chunks[-1], (0, padding_size))
-
-        return torch.stack(chunks, dim=0)
-
     def save_match(
         self,
         mobile: Tensor,
         stethos: Tensor,
+        sample_rate: int,
         output_dir: str,
         filename: str,
         suffix: str = None,
@@ -169,5 +157,5 @@ class FindTrigger:
         filename = f"{base_filename}{suffix}.pt"
         filepath = file_dir.joinpath(filename)
 
-        torch.save((mobile, stethos), filepath)
+        torch.save((mobile, stethos, sample_rate), filepath)
         print(f"File '{filepath}' was saved succesfully!")
