@@ -53,7 +53,7 @@ class CoraTechDataset(Dataset):
         return mobile, stethos
 
 
-class CoraDenoiser(LightningModule):
+class CoraTechModel(LightningModule):
     def __init__(self, input_size: int):
         super().__init__()
         self.lstm1 = nn.LSTM(
