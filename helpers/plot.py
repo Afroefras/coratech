@@ -1,5 +1,6 @@
 import numpy as np
 from pywt import cwt
+from torch import no_grad
 import matplotlib.pyplot as plt
 from scipy.signal import decimate
 from helpers.audio_utils import get_positive_freq_and_magn
@@ -78,3 +79,28 @@ def compare_audios(
     plt.xlabel("Tiempo (segundos)")
     plt.legend()
     plt.show()
+
+
+def plot_model_result(model, dataloader, index):
+    model.eval()
+    with no_grad():
+        batch = next(iter(dataloader))
+        mobile = batch[0][index]
+        stethos = batch[-1][index]
+
+        model_result = model(mobile.unsqueeze(0))
+
+        fig, axs = plt.subplots(3, 1, figsize=(15, 10))
+        axs[0].plot(mobile.squeeze())
+        axs[0].set_title("Celular")
+
+        axs[1].plot(stethos.squeeze())
+        axs[1].set_title("Estetoscopio")
+
+        axs[2].plot(model_result.squeeze())
+        axs[2].set_title("Modelo")
+
+        plt.tight_layout()
+        plt.show()
+
+        return model_result
