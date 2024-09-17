@@ -4,7 +4,6 @@ import numpy as np
 from torch import Tensor
 from pathlib import Path
 from typing import Tuple, List
-import torch.nn.functional as F
 import helpers.audio_utils as AU
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, decimate
