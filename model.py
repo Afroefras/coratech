@@ -56,33 +56,20 @@ class CoraTechDataset(Dataset):
 class CoraTechModel(LightningModule):
     def __init__(self, input_size: int):
         super().__init__()
-        self.lstm1 = nn.LSTM(
+        self.lstm = nn.LSTM(
             input_size,
-            hidden_size=2048,
+            hidden_size=64,
             num_layers=1,
             batch_first=True,
             bidirectional=False,
         )
-        self.lstm2 = nn.LSTM(
-            2048, hidden_size=2048, num_layers=1, batch_first=True, bidirectional=False
-        )
-        self.dense1 = nn.Linear(2048, 2048)
-        self.dense2 = nn.Linear(2048, 1024)
-        self.dense3 = nn.Linear(1024, 1024)
-        self.output_layer = nn.Linear(1024, input_size)
+        self.fc = nn.Linear(64, input_size)
 
     def forward(self, x):
-        lstm_output1, _ = self.lstm1(x)
-        lstm_output2, _ = self.lstm2(lstm_output1)
-        lstm_output2 = lstm_output2[:, -1, :].unsqueeze(
-            dim=1
-        )  # Get the output of the last time step
-
-        dense1_output = self.dense1(lstm_output2)
-        dense2_output = self.dense2(dense1_output)
-        dense3_output = self.dense3(dense2_output)
-        output = self.output_layer(dense3_output)
-        return output
+        lstm_output, _ = self.lstm(x)
+        lstm_output = lstm_output[:, -1, :]
+        output = self.fc(lstm_output)
+        return output.unsqueeze(1)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
