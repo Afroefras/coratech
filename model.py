@@ -25,6 +25,7 @@ class CoraTechDataset(Dataset):
 
         last_chunk_pad_size = chunk_size - chunks[-1].shape[-1]
         if last_chunk_pad_size > 0:
+            chunks[-1] = standard_scale(chunks[-1])
             chunks[-1] = nn.functional.pad(chunks[-1], (0, last_chunk_pad_size))
 
         return chunks
