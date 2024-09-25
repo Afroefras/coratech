@@ -22,7 +22,7 @@ def min_max_scale(x: Tensor) -> Tensor:
 
     scaled = x.clone()
     scaled -= x_min
-    scaled /= x_max - x_min
+    scaled /= (x_max - x_min)
 
     return scaled
 
