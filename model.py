@@ -117,33 +117,45 @@ class Compose:
 class CoraTechModel(LightningModule):
     def __init__(self, input_size: int):
         super().__init__()
-        self.lstm = nn.LSTM(
-            input_size,
-            hidden_size=64,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=False,
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=32, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv1d(
+            in_channels=32, out_channels=64, kernel_size=5, padding=2
         )
-        self.fc = nn.Linear(64, input_size)
+        self.lstm = nn.LSTM(
+            input_size=64,
+            hidden_size=128,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True,
+        )
+        self.fc = nn.Linear(
+            256, input_size
+        )  # 128 debido al LSTM bidireccional (64 * 2)
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, x):
-        x = x.unsqueeze(-1)
+        x = x.unsqueeze(
+            1
+        )  # Conv1d espera entrada con dimensión (batch_size, channels, seq_length)
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = x.transpose(1, 2)  # LSTM espera (batch_size, seq_length, features)
         lstm_output, _ = self.lstm(x)
-        lstm_output = lstm_output[:, -1, :]
+        lstm_output = self.dropout(lstm_output[:, -1, :])
         output = self.fc(lstm_output)
         return output
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.MSELoss()(predictions, y)
+        loss = nn.L1Loss()(predictions, y)
         self.log("train_loss", loss, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.MSELoss()(predictions, y)
+        loss = nn.L1Loss()(predictions, y)
         self.log("val_loss", loss, on_epoch=True)
         return loss
 
