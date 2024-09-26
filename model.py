@@ -117,8 +117,11 @@ class Compose:
 class CoraTechModel(LightningModule):
     def __init__(self, input_size: int):
         super().__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=32, kernel_size=5, padding=2)
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=5, padding=2)
         self.conv2 = nn.Conv1d(
+            in_channels=16, out_channels=32, kernel_size=5, padding=2
+        )
+        self.conv3 = nn.Conv1d(
             in_channels=32, out_channels=64, kernel_size=5, padding=2
         )
         self.lstm = nn.LSTM(
@@ -128,18 +131,15 @@ class CoraTechModel(LightningModule):
             batch_first=True,
             bidirectional=True,
         )
-        self.fc = nn.Linear(
-            256, input_size
-        )  # 128 debido al LSTM bidireccional (64 * 2)
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(0.3)
+        self.fc = nn.Linear(256, input_size)
 
     def forward(self, x):
-        x = x.unsqueeze(
-            1
-        )  # Conv1d espera entrada con dimensión (batch_size, channels, seq_length)
+        x = x.unsqueeze(1)
         x = torch.relu(self.conv1(x))
         x = torch.relu(self.conv2(x))
-        x = x.transpose(1, 2)  # LSTM espera (batch_size, seq_length, features)
+        x = torch.relu(self.conv3(x))
+        x = x.transpose(1, 2)
         lstm_output, _ = self.lstm(x)
         lstm_output = self.dropout(lstm_output[:, -1, :])
         output = self.fc(lstm_output)
