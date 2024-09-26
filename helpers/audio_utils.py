@@ -75,3 +75,14 @@ def resample_audio(
     audio = resampler(audio)
     sample_rate = new_sample_rate
     return audio, sample_rate
+
+
+def add_noise(audio: Tensor, noise: Tensor, noise_vol: float) -> Tensor:
+    if audio.shape[-1] > noise.shape[-1]:
+        repeat_factor = audio.shape[-1] // noise.shape[-1] + 1
+        noise = noise.repeat(1, repeat_factor)
+
+    noise = noise[:, : audio.shape[-1]]
+
+    audio_noisy = noise * noise_vol + audio * (1 - noise_vol)
+    return audio_noisy

@@ -134,8 +134,8 @@ class FindTrigger:
 
         mobile, stethos = self.set_min_length(mobile_trim, stethos_trim)
 
-        mobile_scaled = AU.min_max_scale(mobile)
-        stethos_scaled = AU.min_max_scale(stethos)
+        mobile_scaled = AU.standard_scale(mobile)
+        stethos_scaled = AU.standard_scale(stethos)
 
         return mobile_scaled, stethos_scaled
 
