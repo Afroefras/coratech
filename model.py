@@ -7,7 +7,7 @@ from typing import List, Tuple
 from torch.utils.data import Dataset
 from pytorch_lightning import LightningModule
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from helpers.audio_utils import standard_scale, add_noise
+from helpers.audio_utils import standard_scale, add_noise, resample_audio
 
 
 class CoraTechDataset(Dataset):
@@ -62,6 +62,14 @@ class AddHospitalNoise(object):
         self.noise_files = list(noise_dir.glob("*.wav"))
         self.noise_volume_range = noise_volume_range
 
+    def load_noise(self, sample_rate_target: int) -> torch.Tensor:
+        noise_path = random.choice(self.noise_files)
+
+        noise, sample_rate = torchaudio.load(str(noise_path))
+        noise, sample_rate = resample_audio(noise, sample_rate, sample_rate_target)
+        noise = standard_scale(noise)
+        return noise
+
     def get_random_noise_snippet(
         self, noise: torch.Tensor, n_samples: int
     ) -> torch.Tensor:
@@ -70,13 +78,12 @@ class AddHospitalNoise(object):
 
         start_idx = random.randint(0, noise.shape[-1] - n_samples)
         end_idx = start_idx + n_samples
-        return noise[start_idx:end_idx]
+        return noise[:, start_idx:end_idx]
 
     def __call__(self, sample):
         mobile, stethos = sample["mobile"], sample["stethos"]
 
-        noise_path = random.choice(self.noise_files)
-        hospital_noise = torchaudio.load(str(noise_path))
+        hospital_noise = self.load_noise(sample_rate_target=4000)
         noise_snippet = self.get_random_noise_snippet(hospital_noise, mobile.shape[-1])
 
         noise_volume = random.uniform(*self.noise_volume_range)
@@ -93,6 +100,16 @@ class Normalize(object):
         stethos = standard_scale(stethos)
 
         return {"mobile": mobile, "stethos": stethos}
+
+
+class Compose:
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, sample):
+        for t in self.transforms:
+            sample = t(sample)
+        return sample
 
 
 class CoraTechModel(LightningModule):
