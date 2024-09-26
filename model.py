@@ -54,6 +54,8 @@ class CoraTechDataset(Dataset):
             sample = self.transform(sample)
             mobile, stethos = sample["mobile"], sample["stethos"]
 
+        mobile = mobile.squeeze(0)
+        stethos = stethos.squeeze(0)
         return mobile, stethos
 
 
@@ -125,10 +127,11 @@ class CoraTechModel(LightningModule):
         self.fc = nn.Linear(64, input_size)
 
     def forward(self, x):
+        x = x.unsqueeze(-1)
         lstm_output, _ = self.lstm(x)
         lstm_output = lstm_output[:, -1, :]
         output = self.fc(lstm_output)
-        return output.unsqueeze(1)
+        return output
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -145,7 +148,7 @@ class CoraTechModel(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
         scheduler = {
             "scheduler": ReduceLROnPlateau(optimizer, patience=3),
             "monitor": "val_loss",
