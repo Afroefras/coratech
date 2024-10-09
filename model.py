@@ -1,16 +1,19 @@
 import torch
+import random
+import torchaudio
 import torch.nn as nn
 from pathlib import Path
 from typing import List, Tuple
 from torch.utils.data import Dataset
 from pytorch_lightning import LightningModule
-from helpers.audio_utils import standard_scale
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from helpers.audio_utils import standard_scale, add_noise, resample_audio, apply_lowpass_filter
 
 
 class CoraTechDataset(Dataset):
-    def __init__(self, base_dir: Path, chunk_secs: float):
+    def __init__(self, base_dir: Path, chunk_secs: float, transform=None):
         self.base_dir = base_dir
+        self.transform = transform
         self._load_data(chunk_secs)
 
     def __len__(self) -> int:
@@ -23,9 +26,8 @@ class CoraTechDataset(Dataset):
         chunks = torch.split(audio, chunk_size, dim=-1)
         chunks = list(chunks)
 
-        last_chunk_pad_size = chunk_size - chunks[-1].shape[-1]
-        if last_chunk_pad_size > 0:
-            chunks[-1] = nn.functional.pad(chunks[-1], (0, last_chunk_pad_size))
+        if chunk_size > chunks[-1].shape[-1]:
+            chunks.pop(-1)
 
         return chunks
 
@@ -47,59 +49,119 @@ class CoraTechDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         mobile, stethos = self.data[idx]
 
+        if self.transform:
+            sample = {"mobile": mobile, "stethos": stethos}
+            sample = self.transform(sample)
+            mobile, stethos = sample["mobile"], sample["stethos"]
+
+        mobile = apply_lowpass_filter(mobile, 4000, 270, 4)
+        mobile = mobile.squeeze(0)
+        stethos = stethos.squeeze(0)
+        return mobile, stethos
+
+
+class AddHospitalNoise(object):
+    def __init__(self, noise_dir: Path, noise_volume_range=(0.05, 0.2)):
+        self.noise_files = list(noise_dir.glob("*.wav"))
+        self.noise_volume_range = noise_volume_range
+
+    def load_noise(self, sample_rate_target: int) -> torch.Tensor:
+        noise_path = random.choice(self.noise_files)
+
+        noise, sample_rate = torchaudio.load(str(noise_path))
+        noise, sample_rate = resample_audio(noise, sample_rate, sample_rate_target)
+        noise = standard_scale(noise)
+        return noise
+
+    def get_random_noise_snippet(
+        self, noise: torch.Tensor, n_samples: int
+    ) -> torch.Tensor:
+        if noise.shape[-1] <= n_samples:
+            return noise
+
+        start_idx = random.randint(0, noise.shape[-1] - n_samples)
+        end_idx = start_idx + n_samples
+        return noise[:, start_idx:end_idx]
+
+    def __call__(self, sample):
+        mobile, stethos = sample["mobile"], sample["stethos"]
+
+        hospital_noise = self.load_noise(sample_rate_target=4000)
+        noise_snippet = self.get_random_noise_snippet(hospital_noise, mobile.shape[-1])
+
+        noise_volume = random.uniform(*self.noise_volume_range)
+        noisy_mobile = add_noise(mobile, noise_snippet, noise_volume)
+
+        return {"mobile": noisy_mobile, "stethos": stethos}
+
+
+class Normalize(object):
+    def __call__(self, sample):
+        mobile, stethos = sample["mobile"], sample["stethos"]
+
         mobile = standard_scale(mobile)
         stethos = standard_scale(stethos)
 
-        return mobile, stethos
+        return {"mobile": mobile, "stethos": stethos}
+
+
+class Compose:
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, sample):
+        for t in self.transforms:
+            sample = t(sample)
+        return sample
 
 
 class CoraTechModel(LightningModule):
     def __init__(self, input_size: int):
         super().__init__()
-        self.lstm1 = nn.LSTM(
-            input_size,
-            hidden_size=2048,
-            num_layers=1,
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv1d(
+            in_channels=16, out_channels=32, kernel_size=5, padding=2
+        )
+        self.conv3 = nn.Conv1d(
+            in_channels=32, out_channels=64, kernel_size=5, padding=2
+        )
+        self.lstm = nn.LSTM(
+            input_size=64,
+            hidden_size=128,
+            num_layers=2,
             batch_first=True,
-            bidirectional=False,
+            bidirectional=True,
         )
-        self.lstm2 = nn.LSTM(
-            2048, hidden_size=2048, num_layers=1, batch_first=True, bidirectional=False
-        )
-        self.dense1 = nn.Linear(2048, 2048)
-        self.dense2 = nn.Linear(2048, 1024)
-        self.dense3 = nn.Linear(1024, 1024)
-        self.output_layer = nn.Linear(1024, input_size)
+        self.dropout = nn.Dropout(0.3)
+        self.fc = nn.Linear(256, input_size)
 
     def forward(self, x):
-        lstm_output1, _ = self.lstm1(x)
-        lstm_output2, _ = self.lstm2(lstm_output1)
-        lstm_output2 = lstm_output2[:, -1, :].unsqueeze(
-            dim=1
-        )  # Get the output of the last time step
-
-        dense1_output = self.dense1(lstm_output2)
-        dense2_output = self.dense2(dense1_output)
-        dense3_output = self.dense3(dense2_output)
-        output = self.output_layer(dense3_output)
+        x = x.unsqueeze(1)
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = x.transpose(1, 2)
+        lstm_output, _ = self.lstm(x)
+        lstm_output = self.dropout(lstm_output[:, -1, :])
+        output = self.fc(lstm_output)
         return output
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.MSELoss()(predictions, y)
+        loss = nn.L1Loss()(predictions, y)
         self.log("train_loss", loss, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.MSELoss()(predictions, y)
+        loss = nn.L1Loss()(predictions, y)
         self.log("val_loss", loss, on_epoch=True)
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
         scheduler = {
             "scheduler": ReduceLROnPlateau(optimizer, patience=3),
             "monitor": "val_loss",

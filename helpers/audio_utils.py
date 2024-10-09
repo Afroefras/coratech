@@ -3,7 +3,7 @@ from torch import Tensor
 from typing import Tuple
 import torchaudio.functional as F
 import torchaudio.transforms as T
-
+from scipy.signal import butter, lfilter
 
 def standard_scale(x: Tensor) -> Tensor:
     x_mean = x.mean()
@@ -54,6 +54,21 @@ def apply_bandpass_filter(
     return filtered_waveform
 
 
+def apply_lowpass_filter(
+    waveform: Tensor, sample_rate: int, cutoff_freq: int, order: int
+) -> Tensor:
+    # Calcula los coeficientes del filtro Butterworth pasa bajas
+    nyquist = 0.5 * sample_rate
+    normalized_cutoff = cutoff_freq / nyquist
+    b, a = butter(order, normalized_cutoff, btype='low', analog=False)
+
+    # Aplica el filtro usando lfilter de scipy
+    filtered_waveform = lfilter(b, a, waveform.numpy())
+    
+    # Convierte de nuevo a Tensor de PyTorch
+    return Tensor(filtered_waveform)
+
+
 def trim_audio(
     audio: Tensor, sample_rate: int, start_at: float = None, end_at: float = None
 ):
@@ -75,3 +90,14 @@ def resample_audio(
     audio = resampler(audio)
     sample_rate = new_sample_rate
     return audio, sample_rate
+
+
+def add_noise(audio: Tensor, noise: Tensor, noise_vol: float) -> Tensor:
+    if audio.shape[-1] > noise.shape[-1]:
+        repeat_factor = audio.shape[-1] // noise.shape[-1] + 1
+        noise = noise.repeat(1, repeat_factor)
+
+    noise = noise[:, : audio.shape[-1]]
+
+    audio_noisy = noise * noise_vol + audio * (1 - noise_vol)
+    return audio_noisy
