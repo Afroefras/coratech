@@ -7,7 +7,7 @@ from typing import List, Tuple
 from torch.utils.data import Dataset
 from pytorch_lightning import LightningModule
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from helpers.audio_utils import standard_scale, add_noise, resample_audio
+from helpers.audio_utils import standard_scale, add_noise, resample_audio, apply_lowpass_filter
 
 
 class CoraTechDataset(Dataset):
@@ -54,6 +54,7 @@ class CoraTechDataset(Dataset):
             sample = self.transform(sample)
             mobile, stethos = sample["mobile"], sample["stethos"]
 
+        mobile = apply_lowpass_filter(mobile, 4000, 270, 4)
         mobile = mobile.squeeze(0)
         stethos = stethos.squeeze(0)
         return mobile, stethos
