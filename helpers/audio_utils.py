@@ -5,6 +5,7 @@ import torchaudio.functional as F
 import torchaudio.transforms as T
 from scipy.signal import butter, lfilter
 
+
 def standard_scale(x: Tensor) -> Tensor:
     x_mean = x.mean()
     x_std = x.std() + 1e-10
@@ -60,11 +61,11 @@ def apply_lowpass_filter(
     # Calcula los coeficientes del filtro Butterworth pasa bajas
     nyquist = 0.5 * sample_rate
     normalized_cutoff = cutoff_freq / nyquist
-    b, a = butter(order, normalized_cutoff, btype='low', analog=False)
+    b, a = butter(order, normalized_cutoff, btype="low", analog=False)
 
     # Aplica el filtro usando lfilter de scipy
     filtered_waveform = lfilter(b, a, waveform.numpy())
-    
+
     # Convierte de nuevo a Tensor de PyTorch
     return Tensor(filtered_waveform)
 

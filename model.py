@@ -7,7 +7,12 @@ from typing import List, Tuple
 from torch.utils.data import Dataset
 from pytorch_lightning import LightningModule
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from helpers.audio_utils import standard_scale, add_noise, resample_audio, apply_lowpass_filter
+from helpers.audio_utils import (
+    standard_scale,
+    add_noise,
+    resample_audio,
+    apply_lowpass_filter,
+)
 
 
 class CoraTechDataset(Dataset):
@@ -54,7 +59,7 @@ class CoraTechDataset(Dataset):
             sample = self.transform(sample)
             mobile, stethos = sample["mobile"], sample["stethos"]
 
-        mobile = apply_lowpass_filter(mobile, 4000, 270, 4)
+        # mobile = apply_lowpass_filter(mobile, 4000, 270, 4)
         mobile = mobile.squeeze(0)
         stethos = stethos.squeeze(0)
         return mobile, stethos
@@ -118,45 +123,24 @@ class Compose:
 class CoraTechModel(LightningModule):
     def __init__(self, input_size: int):
         super().__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=5, padding=2)
-        self.conv2 = nn.Conv1d(
-            in_channels=16, out_channels=32, kernel_size=5, padding=2
-        )
-        self.conv3 = nn.Conv1d(
-            in_channels=32, out_channels=64, kernel_size=5, padding=2
-        )
-        self.lstm = nn.LSTM(
-            input_size=64,
-            hidden_size=128,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.dropout = nn.Dropout(0.3)
-        self.fc = nn.Linear(256, input_size)
+        self.fc = nn.Linear(input_size, input_size)
 
     def forward(self, x):
-        x = x.unsqueeze(1)
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = torch.relu(self.conv3(x))
-        x = x.transpose(1, 2)
-        lstm_output, _ = self.lstm(x)
-        lstm_output = self.dropout(lstm_output[:, -1, :])
-        output = self.fc(lstm_output)
+        output = self.fc(x)
         return output
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.L1Loss()(predictions, y)
+        loss = nn.MSELoss()(predictions, y)
         self.log("train_loss", loss, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.L1Loss()(predictions, y)
+        #         loss = nn.L1Loss()(predictions, y)
+        loss = nn.MSELoss()(predictions, y)
         self.log("val_loss", loss, on_epoch=True)
         return loss
 
