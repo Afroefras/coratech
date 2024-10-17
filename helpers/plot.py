@@ -98,14 +98,11 @@ def compare_audios(mobile: np.array, stethos: np.array, sample_rate: int) -> Non
     plt.show()
 
 
-def plot_model_result(model, dataloader, index):
-    model.eval()
+def plot_model_result(trained_model, dataset, index):
+    trained_model.eval()
     with no_grad():
-        batch = next(iter(dataloader))
-        mobile = batch[0][index]
-        stethos = batch[-1][index]
-
-        model_result = model(mobile.unsqueeze(0))
+        mobile, stethos = dataset[index]
+        model_result = trained_model(mobile.unsqueeze(0))
 
         fig, axs = plt.subplots(3, 1, figsize=(15, 10))
         axs[0].plot(mobile.squeeze())

@@ -3,7 +3,7 @@ import random
 import torchaudio
 import torch.nn as nn
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from torch.utils.data import Dataset
 from pytorch_lightning import LightningModule
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -59,22 +59,27 @@ class CoraTechDataset(Dataset):
             sample = self.transform(sample)
             mobile, stethos = sample["mobile"], sample["stethos"]
 
-        # mobile = apply_lowpass_filter(mobile, 4000, 270, 4)
         mobile = mobile.squeeze(0)
         stethos = stethos.squeeze(0)
         return mobile, stethos
 
 
 class AddHospitalNoise(object):
-    def __init__(self, noise_dir: Path, noise_volume_range=(0.05, 0.2)):
+    def __init__(
+        self,
+        noise_dir: Path,
+        noise_volume_range: Tuple[float, float],
+        sample_rate_target: int,
+    ) -> None:
         self.noise_files = list(noise_dir.glob("*.wav"))
         self.noise_volume_range = noise_volume_range
+        self.sample_rate_target = sample_rate_target
 
-    def load_noise(self, sample_rate_target: int) -> torch.Tensor:
+    def load_noise(self) -> torch.Tensor:
         noise_path = random.choice(self.noise_files)
 
         noise, sample_rate = torchaudio.load(str(noise_path))
-        noise, sample_rate = resample_audio(noise, sample_rate, sample_rate_target)
+        noise, sample_rate = resample_audio(noise, sample_rate, self.sample_rate_target)
         noise = standard_scale(noise)
         return noise
 
@@ -88,16 +93,42 @@ class AddHospitalNoise(object):
         end_idx = start_idx + n_samples
         return noise[:, start_idx:end_idx]
 
-    def __call__(self, sample):
+    def __call__(self, sample) -> Dict[str, torch.Tensor]:
         mobile, stethos = sample["mobile"], sample["stethos"]
 
-        hospital_noise = self.load_noise(sample_rate_target=4000)
+        hospital_noise = self.load_noise()
         noise_snippet = self.get_random_noise_snippet(hospital_noise, mobile.shape[-1])
 
         noise_volume = random.uniform(*self.noise_volume_range)
         noisy_mobile = add_noise(mobile, noise_snippet, noise_volume)
 
         return {"mobile": noisy_mobile, "stethos": stethos}
+
+
+class LowpassFilter(object):
+    def __init__(self, sample_rate: int, cutoff_freq: int, order: int):
+        self.sample_rate = sample_rate
+        self.cutoff_freq = cutoff_freq
+        self.order = order
+
+    def __call__(self, sample):
+        mobile, stethos = sample["mobile"], sample["stethos"]
+
+        mobile_filtered = apply_lowpass_filter(
+            mobile,
+            sample_rate=self.sample_rate,
+            cutoff_freq=self.cutoff_freq,
+            order=self.order,
+        )
+
+        stethos_filtered = apply_lowpass_filter(
+            stethos,
+            sample_rate=self.sample_rate,
+            cutoff_freq=self.cutoff_freq,
+            order=self.order,
+        )
+
+        return {"mobile": mobile_filtered, "stethos": stethos_filtered}
 
 
 class Normalize(object):
@@ -121,26 +152,43 @@ class Compose:
 
 
 class CoraTechModel(LightningModule):
-    def __init__(self, input_size: int):
+    def __init__(self, input_size):
         super().__init__()
-        self.fc = nn.Linear(input_size, input_size)
+
+        self.fc1 = nn.Linear(input_size, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.fc2 = nn.Linear(256, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.fc3 = nn.Linear(256, input_size)
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.3)
 
     def forward(self, x):
-        output = self.fc(x)
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        output = self.fc3(x)
         return output
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        loss = nn.MSELoss()(predictions, y)
+        loss = nn.L1Loss()(predictions, y)
         self.log("train_loss", loss, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         predictions = self(x)
-        #         loss = nn.L1Loss()(predictions, y)
-        loss = nn.MSELoss()(predictions, y)
+        loss = nn.L1Loss()(predictions, y)
         self.log("val_loss", loss, on_epoch=True)
         return loss
 
