@@ -67,45 +67,41 @@ def plot_audio_fft(audio: np.array, sample_rate: int) -> None:
     plt.show()
 
 
-def compare_audios(mobile: np.array, stethos: np.array, sample_rate: int) -> None:
-    time_axis = np.linspace(0, len(stethos) / sample_rate, num=len(stethos))
+def compare_audios(
+    first_audio: np.array,
+    first_title: str,
+    second_audio: np.array,
+    second_title: str,
+    sample_rate: int,
+) -> None:
+    time_axis = np.linspace(0, len(second_audio) / sample_rate, num=len(second_audio))
 
     plt.figure(figsize=(12, 10))
 
     plt.subplot(3, 1, 1)
-    plt.plot(time_axis, mobile, label="Celular", alpha=0.7, color="skyblue")
-    plt.plot(time_axis, stethos, label="Estetoscopio", alpha=0.7)
-    plt.xlabel("Tiempo (segundos)")
+    plt.plot(time_axis, first_audio, label=first_title, alpha=0.7, color="skyblue")
+    plt.plot(time_axis, second_audio, label=second_title, alpha=0.7)
     plt.ylabel("Amplitud")
-    plt.title("Audios Superpuestos")
     plt.legend()
 
     plt.subplot(3, 1, 2)
-    plt.plot(time_axis, mobile, label="Celular", alpha=0.7, color="skyblue")
-    plt.xlabel("Tiempo (segundos)")
-    plt.ylabel("Amplitud")
-    plt.title("Audio del Celular")
+    plt.plot(time_axis, first_audio, label=first_title, alpha=0.7, color="skyblue")
     plt.legend()
 
     plt.subplot(3, 1, 3)
-    plt.plot(time_axis, stethos, label="Estetoscopio", alpha=0.7)
+    plt.plot(time_axis, second_audio, label=second_title, alpha=0.7)
     plt.xlabel("Tiempo (segundos)")
-    plt.ylabel("Amplitud")
-    plt.title("Audio del Estetoscopio")
     plt.legend()
 
     plt.tight_layout()
     plt.show()
 
 
-def plot_model_result(model, dataloader, index):
-    model.eval()
+def plot_model_result(trained_model, dataset, index):
+    trained_model.eval()
     with no_grad():
-        batch = next(iter(dataloader))
-        mobile = batch[0][index]
-        stethos = batch[-1][index]
-
-        model_result = model(mobile.unsqueeze(0))
+        mobile, stethos = dataset[index]
+        model_result = trained_model(mobile.unsqueeze(0))
 
         fig, axs = plt.subplots(3, 1, figsize=(15, 10))
         axs[0].plot(mobile.squeeze())
