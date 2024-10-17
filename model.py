@@ -157,9 +157,11 @@ class CoraTechModel(LightningModule):
 
         self.fc1 = nn.Linear(input_size, 256)
         self.bn1 = nn.BatchNorm1d(256)
-        self.fc2 = nn.Linear(256, 256)
-        self.bn2 = nn.BatchNorm1d(256)
-        self.fc3 = nn.Linear(256, input_size)
+        self.fc2 = nn.Linear(256, 128)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.fc3 = nn.Linear(128, 256)
+        self.bn3 = nn.BatchNorm1d(256)
+        self.fc4 = nn.Linear(256, input_size)
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.3)
@@ -175,7 +177,12 @@ class CoraTechModel(LightningModule):
         x = self.relu(x)
         x = self.dropout(x)
 
-        output = self.fc3(x)
+        x = self.fc3(x)
+        x = self.bn3(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        output = self.fc4(x)
         return output
 
     def training_step(self, batch, batch_idx):
