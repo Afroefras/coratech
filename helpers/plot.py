@@ -29,7 +29,9 @@ def plot_fourier_spectrogram(
     return im
 
 
-def plot_mel_spectrogram(audio: np.array, sample_rate: int, ax: plt.Axes) -> plt.Axes:
+def plot_mel_spectrogram(
+    audio: torch.Tensor, sample_rate: int, ax: plt.Axes
+) -> plt.Axes:
     mel_spec_transform = torchaudio.transforms.MelSpectrogram(
         sample_rate=sample_rate, n_fft=1024, hop_length=512, n_mels=128
     )
