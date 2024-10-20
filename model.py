@@ -151,7 +151,7 @@ class Compose:
         return sample
 
 
-class CoraTechModel(LightningModule):
+class CoraTechModelWaveform(LightningModule):
     def __init__(self, input_size):
         super().__init__()
 
@@ -208,3 +208,35 @@ class CoraTechModel(LightningModule):
             "frequency": 1,
         }
         return [optimizer], [scheduler]
+
+
+# class CoraTechModelSpectrogram(LightningModule):
+#     def __init__(self, input_size):
+#         super().__init__()
+
+#     def forward(self, x):
+#         return x
+
+#     def training_step(self, batch, batch_idx):
+#         x, y = batch
+#         predictions = self(x)
+#         loss = nn.L1Loss()(predictions, y)
+#         self.log("train_loss", loss, on_epoch=True)
+#         return loss
+
+#     def validation_step(self, batch, batch_idx):
+#         x, y = batch
+#         predictions = self(x)
+#         loss = nn.L1Loss()(predictions, y)
+#         self.log("val_loss", loss, on_epoch=True)
+#         return loss
+
+#     def configure_optimizers(self):
+#         optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+#         scheduler = {
+#             "scheduler": ReduceLROnPlateau(optimizer, patience=3),
+#             "monitor": "val_loss",
+#             "interval": "epoch",
+#             "frequency": 1,
+#         }
+#         return [optimizer], [scheduler]
