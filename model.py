@@ -151,7 +151,7 @@ class Compose:
         return sample
 
 
-class CoraTechModel(LightningModule):
+class CoraTechModelWaveform(LightningModule):
     def __init__(self, input_size):
         super().__init__()
 
